@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Roofline Model Calculator</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #0d1117;
+      color: #e6edf3;
+      min-height: 100vh;
+      padding: 2rem;
+    }
+    h1 {
+      font-size: 1.6rem;
+      font-weight: 700;
+      margin-bottom: 0.25rem;
+      color: #f0f6fc;
+    }
+    .subtitle {
+      color: #8b949e;
+      font-size: 0.9rem;
+      margin-bottom: 2rem;
+    }
+    .subtitle a { color: #58a6ff; text-decoration: none; }
+    .layout {
+      display: grid;
+      grid-template-columns: 340px 1fr;
+      gap: 1.5rem;
+      max-width: 1100px;
+    }
+    @media (max-width: 768px) {
+      .layout { grid-template-columns: 1fr; }
+    }
+    .panel {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 10px;
+      padding: 1.5rem;
+    }
+    .panel h2 {
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #8b949e;
+      margin-bottom: 1.25rem;
+    }
+    .preset-row {
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+      margin-bottom: 1.5rem;
+    }
+    .preset-btn {
+      background: #21262d;
+      border: 1px solid #30363d;
+      color: #c9d1d9;
+      padding: 0.35rem 0.75rem;
+      border-radius: 6px;
+      font-size: 0.8rem;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .preset-btn:hover, .preset-btn.active {
+      background: #1f6feb;
+      border-color: #1f6feb;
+      color: #fff;
+    }
+    .field { margin-bottom: 1.1rem; }
+    label {
+      display: block;
+      font-size: 0.82rem;
+      color: #8b949e;
+      margin-bottom: 0.35rem;
+    }
+    input[type="number"], select {
+      width: 100%;
+      background: #0d1117;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      color: #e6edf3;
+      padding: 0.5rem 0.75rem;
+      font-size: 0.92rem;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    input[type="number"]:focus, select:focus {
+      border-color: #58a6ff;
+    }
+    .workload-section {
+      border-top: 1px solid #30363d;
+      padding-top: 1.1rem;
+      margin-top: 1.1rem;
+    }
+    .result-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.75rem;
+      margin-bottom: 1rem;
+    }
+    .result-card {
+      background: #0d1117;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      padding: 0.85rem;
+    }
+    .result-label {
+      font-size: 0.72rem;
+      color: #8b949e;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 0.3rem;
+    }
+    .result-value {
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: #f0f6fc;
+    }
+    .result-value.green { color: #3fb950; }
+    .result-value.orange { color: #d29922; }
+    .result-value.red { color: #f85149; }
+    .zone-banner {
+      border-radius: 8px;
+      padding: 1rem 1.1rem;
+      margin-bottom: 1rem;
+      font-size: 0.88rem;
+      line-height: 1.5;
+    }
+    .zone-banner.memory { background: #2d1a1a; border: 1px solid #f8514950; }
+    .zone-banner.compute { background: #1a2d1a; border: 1px solid #3fb95050; }
+    .zone-banner strong { display: block; font-size: 1rem; margin-bottom: 0.2rem; }
+    .chart-wrapper {
+      position: relative;
+      height: 400px;
+    }
+    .utilization-bar-wrap {
+      margin-top: 0.75rem;
+    }
+    .util-label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.78rem;
+      color: #8b949e;
+      margin-bottom: 0.3rem;
+    }
+    .util-bar-bg {
+      background: #21262d;
+      border-radius: 4px;
+      height: 10px;
+      overflow: hidden;
+    }
+    .util-bar-fill {
+      height: 100%;
+      border-radius: 4px;
+      transition: width 0.4s ease;
+    }
+  </style>
+</head>
+<body>
+  <h1>Roofline Model Calculator</h1>
+  <p class="subtitle">
+    From <a href="../README.md">Why More Compute Does Not Mean Faster AI</a> by Mona Mishra
+  </p>
+
+  <div class="layout">
+    <!-- Left panel: inputs -->
+    <div class="panel">
+      <h2>Chip Configuration</h2>
+      <div class="preset-row" id="presets">
+        <button class="preset-btn" data-tflops="989" data-bw="3350" data-name="H100 SXM5">H100 SXM5</button>
+        <button class="preset-btn" data-tflops="275" data-bw="1200" data-name="TPU v4">TPU v4</button>
+        <button class="preset-btn" data-tflops="312" data-bw="2000" data-name="A100 80GB">A100 80GB</button>
+        <button class="preset-btn" data-tflops="1457" data-bw="8000" data-name="H200">H200</button>
+      </div>
+
+      <div class="field">
+        <label>Peak Compute (TFLOPS, BF16)</label>
+        <input type="number" id="tflops" value="989" min="1" step="1" />
+      </div>
+      <div class="field">
+        <label>HBM Bandwidth (GB/s)</label>
+        <input type="number" id="bandwidth" value="3350" min="1" step="10" />
+      </div>
+
+      <div class="workload-section">
+        <h2>Your Workload</h2>
+        <div class="field">
+          <label>Arithmetic Intensity (FLOPs/Byte)</label>
+          <input type="number" id="intensity" value="1" min="0.01" step="0.5" />
+        </div>
+        <div class="field">
+          <label>Quick Estimate</label>
+          <select id="workload-preset">
+            <option value="">— Select a workload —</option>
+            <option value="0.5">LLM Decode (batch=1) — ~0.5</option>
+            <option value="8">LLM Decode (batch=16) — ~8</option>
+            <option value="64">LLM Decode (batch=128) — ~64</option>
+            <option value="150">LLM Prefill (short seq) — ~150</option>
+            <option value="400">LLM Prefill (long seq) — ~400</option>
+            <option value="1000">Dense training step — ~1000</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Results -->
+      <div class="result-grid">
+        <div class="result-card">
+          <div class="result-label">Ridge Point</div>
+          <div class="result-value" id="ridge-point">—</div>
+        </div>
+        <div class="result-card">
+          <div class="result-label">Attainable Perf</div>
+          <div class="result-value" id="attainable-perf">—</div>
+        </div>
+      </div>
+
+      <div class="result-card" style="margin-bottom:0.75rem">
+        <div class="result-label">MXU Utilization</div>
+        <div class="utilization-bar-wrap">
+          <div class="util-label">
+            <span id="util-pct">—</span>
+            <span id="util-label-right">of peak compute</span>
+          </div>
+          <div class="util-bar-bg">
+            <div class="util-bar-fill" id="util-bar" style="width:0%;background:#f85149"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="zone-banner memory" id="zone-banner">
+        <strong>—</strong>
+      </div>
+    </div>
+
+    <!-- Right panel: chart -->
+    <div class="panel">
+      <h2>Roofline Chart</h2>
+      <div class="chart-wrapper">
+        <canvas id="roofline-chart"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const tflopsInput = document.getElementById('tflops');
+    const bwInput = document.getElementById('bandwidth');
+    const intensityInput = document.getElementById('intensity');
+    const workloadPreset = document.getElementById('workload-preset');
+    const ridgeEl = document.getElementById('ridge-point');
+    const perfEl = document.getElementById('attainable-perf');
+    const utilPct = document.getElementById('util-pct');
+    const utilBar = document.getElementById('util-bar');
+    const zoneBanner = document.getElementById('zone-banner');
+
+    // Preset buttons
+    document.querySelectorAll('.preset-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        tflopsInput.value = btn.dataset.tflops;
+        bwInput.value = btn.dataset.bw;
+        update();
+      });
+    });
+
+    workloadPreset.addEventListener('change', () => {
+      if (workloadPreset.value) {
+        intensityInput.value = workloadPreset.value;
+        update();
+      }
+    });
+
+    // Chart setup
+    const ctx = document.getElementById('roofline-chart').getContext('2d');
+    const chart = new Chart(ctx, {
+      type: 'line',
+      data: { datasets: [] },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: { duration: 300 },
+        scales: {
+          x: {
+            type: 'logarithmic',
+            title: { display: true, text: 'Arithmetic Intensity (FLOPs/Byte)', color: '#8b949e' },
+            grid: { color: '#21262d' },
+            ticks: { color: '#8b949e' },
+            min: 0.1, max: 10000
+          },
+          y: {
+            type: 'logarithmic',
+            title: { display: true, text: 'Performance (TFLOPS/s)', color: '#8b949e' },
+            grid: { color: '#21262d' },
+            ticks: { color: '#8b949e' },
+          }
+        },
+        plugins: {
+          legend: {
+            labels: { color: '#c9d1d9', boxWidth: 12, font: { size: 12 } }
+          },
+          tooltip: {
+            callbacks: {
+              label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y.toFixed(1)} TFLOPS/s`
+            }
+          }
+        }
+      }
+    });
+
+    function buildRooflineData(tflops, bw) {
+      const ridge = tflops / bw;
+      const points = [];
+      const xs = [];
+      for (let exp = -1; exp <= 4; exp += 0.1) {
+        xs.push(Math.pow(10, exp));
+      }
+      for (const x of xs) {
+        const y = Math.min(tflops, bw * x);
+        points.push({ x, y });
+      }
+      return { points, ridge };
+    }
+
+    function update() {
+      const tflops = parseFloat(tflopsInput.value) || 989;
+      const bw = parseFloat(bwInput.value) || 3350;
+      const intensity = parseFloat(intensityInput.value) || 1;
+
+      const ridge = tflops / bw;
+      const attainable = Math.min(tflops, bw * intensity);
+      const utilization = (attainable / tflops) * 100;
+      const isMemoryBound = intensity < ridge;
+
+      ridgeEl.textContent = ridge.toFixed(1) + ' FLOPs/B';
+      perfEl.textContent = attainable.toFixed(0) + ' TFLOPS';
+      utilPct.textContent = utilization.toFixed(1) + '%';
+
+      utilBar.style.width = Math.min(utilization, 100) + '%';
+      if (utilization < 10) {
+        utilBar.style.background = '#f85149';
+        utilPct.className = 'red';
+      } else if (utilization < 60) {
+        utilBar.style.background = '#d29922';
+        utilPct.className = 'orange';
+      } else {
+        utilBar.style.background = '#3fb950';
+        utilPct.className = 'green';
+      }
+
+      zoneBanner.className = 'zone-banner ' + (isMemoryBound ? 'memory' : 'compute');
+      if (isMemoryBound) {
+        const pct = (intensity / ridge * 100).toFixed(1);
+        zoneBanner.innerHTML = `<strong>⚠️ Memory Bound</strong>
+          Your workload intensity (${intensity} FLOPs/B) is ${pct}% of the ridge point (${ridge.toFixed(1)} FLOPs/B).
+          Adding more compute cores will not help. The constraint is memory bandwidth.`;
+      } else {
+        zoneBanner.innerHTML = `<strong>✅ Compute Bound</strong>
+          Your workload is above the ridge point — the chip's compute is the bottleneck, not memory.
+          You're capturing full value from this hardware.`;
+      }
+
+      // Build roofline curve
+      const { points } = buildRooflineData(tflops, bw);
+
+      // Workload point
+      const workloadPoint = [{ x: intensity, y: attainable }];
+
+      chart.data.datasets = [
+        {
+          label: 'Roofline',
+          data: points,
+          borderColor: '#58a6ff',
+          backgroundColor: 'transparent',
+          borderWidth: 2.5,
+          pointRadius: 0,
+          tension: 0
+        },
+        {
+          label: 'Your Workload',
+          data: workloadPoint,
+          borderColor: isMemoryBound ? '#f85149' : '#3fb950',
+          backgroundColor: isMemoryBound ? '#f85149' : '#3fb950',
+          pointRadius: 8,
+          pointHoverRadius: 10,
+          showLine: false
+        }
+      ];
+
+      chart.options.scales.y.min = bw * 0.1;
+      chart.options.scales.y.max = tflops * 2;
+      chart.update();
+    }
+
+    // Init
+    document.querySelectorAll('input').forEach(el => el.addEventListener('input', update));
+    document.getElementById('presets').querySelector('[data-name="H100 SXM5"]').classList.add('active');
+    update();
+  </script>
+</body>
+</html>
