@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Amortized Roofline — MoE & Speculative Decoding Analyzer</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0d1117;color:#e6edf3;padding:2rem 2rem 4rem}
+    h1{font-size:1.5rem;font-weight:700;color:#f0f6fc;margin-bottom:.2rem}
+    .byline{color:#8b949e;font-size:.85rem;margin-bottom:.4rem}
+    .byline a{color:#58a6ff;text-decoration:none}
+    .thesis{background:#161b22;border:1px solid #30363d;border-left:3px solid #58a6ff;border-radius:6px;padding:1rem 1.2rem;margin:1.2rem 0 2rem;font-size:.9rem;line-height:1.6;color:#c9d1d9}
+    .thesis strong{color:#f0f6fc}
+
+    /* Nav tabs */
+    .tabs{display:flex;gap:.5rem;margin-bottom:1.5rem;flex-wrap:wrap}
+    .tab{background:#161b22;border:1px solid #30363d;color:#8b949e;padding:.45rem 1rem;border-radius:6px;font-size:.85rem;cursor:pointer;transition:all .15s}
+    .tab.active{background:#1f6feb;border-color:#1f6feb;color:#fff}
+
+    /* Section */
+    .section{display:none}
+    .section.active{display:block}
+    .section-title{font-size:1.1rem;font-weight:700;color:#f0f6fc;margin-bottom:.3rem}
+    .section-sub{color:#8b949e;font-size:.85rem;margin-bottom:1.2rem;line-height:1.5}
+
+    /* Layout */
+    .two-col{display:grid;grid-template-columns:300px 1fr;gap:1.2rem}
+    @media(max-width:768px){.two-col{grid-template-columns:1fr}}
+    .panel{background:#161b22;border:1px solid #30363d;border-radius:10px;padding:1.2rem}
+    .panel-title{font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:#8b949e;margin-bottom:1rem}
+
+    /* Fields */
+    .field{margin-bottom:.9rem}
+    label{display:block;font-size:.8rem;color:#8b949e;margin-bottom:.3rem}
+    select,input[type=number],input[type=range]{width:100%;background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6edf3;padding:.45rem .7rem;font-size:.88rem;outline:none;transition:border-color .15s}
+    select:focus,input[type=number]:focus{border-color:#58a6ff}
+    input[type=range]{padding:.2rem 0;background:transparent;border:none;-webkit-appearance:none;height:6px}
+    input[type=range]::-webkit-slider-runnable-track{background:#21262d;height:6px;border-radius:3px}
+    input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:#58a6ff;margin-top:-5px;cursor:pointer}
+    .range-row{display:flex;justify-content:space-between;font-size:.75rem;color:#8b949e;margin-top:.2rem}
+
+    /* Result cards */
+    .result-grid{display:grid;grid-template-columns:1fr 1fr;gap:.6rem;margin-bottom:.8rem}
+    .result-card{background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:.8rem}
+    .result-label{font-size:.68rem;text-transform:uppercase;letter-spacing:.06em;color:#8b949e;margin-bottom:.25rem}
+    .result-value{font-size:1.1rem;font-weight:700;color:#f0f6fc}
+    .result-value.green{color:#3fb950}
+    .result-value.orange{color:#d29922}
+    .result-value.red{color:#f85149}
+
+    /* Insight banner */
+    .insight{border-radius:8px;padding:.9rem 1rem;margin-top:.8rem;font-size:.85rem;line-height:1.5}
+    .insight.memory{background:#2d1a1a;border:1px solid #f8514930}
+    .insight.compute{background:#1a2d1a;border:1px solid #3fb95030}
+    .insight strong{display:block;font-size:.95rem;margin-bottom:.2rem}
+    .insight.info{background:#1a2235;border:1px solid #58a6ff30}
+
+    /* Chart */
+    .chart-wrap{position:relative;height:380px}
+    .chart-wrap-tall{position:relative;height:420px}
+
+    /* Model table */
+    .model-table{width:100%;border-collapse:collapse;font-size:.82rem;margin-top:.5rem}
+    .model-table th{text-align:left;color:#8b949e;font-weight:600;padding:.4rem .6rem;border-bottom:1px solid #21262d;font-size:.72rem;text-transform:uppercase;letter-spacing:.05em}
+    .model-table td{padding:.5rem .6rem;border-bottom:1px solid #21262d;color:#c9d1d9}
+    .model-table tr:hover td{background:#161b22}
+    .badge{display:inline-block;padding:.1rem .45rem;border-radius:4px;font-size:.7rem;font-weight:600}
+    .badge.dense{background:#1f3a5f;color:#79c0ff}
+    .badge.moe{background:#2d1f5f;color:#c9acff}
+    .delta-right{color:#3fb950;font-weight:700}
+    .delta-neutral{color:#d29922;font-weight:700}
+
+    /* Source note */
+    .source-note{font-size:.72rem;color:#8b949e;margin-top:.6rem;text-align:right}
+    .source-note a{color:#58a6ff;text-decoration:none}
+  </style>
+</head>
+<body>
+
+<h1>Amortized Roofline Analyzer</h1>
+<p class="byline">By <a href="../README.md">Mona Mishra</a> · Extension of the Roofline Model for MoE & Speculative Decoding Workloads</p>
+<div class="thesis">
+  <strong>The key insight from recent research:</strong> The standard Roofline Model assumes dense, sequential token generation. Modern workloads break this assumption in two important ways — (1) <strong>Mixture-of-Experts (MoE)</strong> activates only a fraction of parameters per token, reshaping the memory access pattern; (2) <strong>Speculative Decoding</strong> amortizes the cost of the large verifier model across multiple verified tokens, raising effective arithmetic intensity. This tool makes both effects visible on the Roofline chart.
+  <br><br>
+  Based on: <a href="https://arxiv.org/abs/2511.14102" style="color:#58a6ff" target="_blank">MoE-SpeQ (arXiv 2511.14102)</a> · <a href="https://arxiv.org/abs/2510.08544" style="color:#58a6ff" target="_blank">SPAD (arXiv 2510.08544)</a> · <a href="https://arxiv.org/html/2507.14397v1" style="color:#58a6ff" target="_blank">LLM Inference Limits (arXiv 2507)</a>
+</div>
+
+<!-- Tabs -->
+<div class="tabs">
+  <button class="tab active" onclick="switchTab('frontier')">① Capability–Efficiency Frontier</button>
+  <button class="tab" onclick="switchTab('moe')">② MoE Roofline Placement</button>
+  <button class="tab" onclick="switchTab('speculative')">③ Speculative Decoding Amortizer</button>
+</div>
+
+<!-- ─────────────────────────────────────────────
+     TAB 1: Capability–Efficiency Frontier
+───────────────────────────────────────────── -->
+<div id="tab-frontier" class="section active">
+  <div class="section-title">Capability vs. Active Parameter Cost</div>
+  <div class="section-sub">
+    Each dot is an open-weight model from the HuggingFace Open LLM Leaderboard (Apr 2026). X-axis = active parameters per token — the key driver of per-token memory bandwidth cost. Y-axis = MMLU score — capability proxy. MoE models reach frontier capability at a fraction of the active parameter cost of equivalent dense models.
+  </div>
+  <div class="panel" style="margin-bottom:1rem">
+    <div class="chart-wrap-tall"><canvas id="frontier-chart"></canvas></div>
+    <p class="source-note">Data: <a href="https://huggingface.co/spaces/open-llm-leaderboard/open_llm_leaderboard" target="_blank">HuggingFace Open LLM Leaderboard v2</a> · <a href="https://www.codesota.com/llm/open-models" target="_blank">CodeSOTA Open Models</a> (Apr 2026)</p>
+  </div>
+  <div class="panel">
+    <div class="panel-title">Model Data (sourced from HF Leaderboard)</div>
+    <table class="model-table" id="model-table"></table>
+  </div>
+</div>
+
+<!-- ─────────────────────────────────────────────
+     TAB 2: MoE Roofline
+───────────────────────────────────────────── -->
+<div id="tab-moe" class="section">
+  <div class="section-title">MoE Roofline Placement</div>
+  <div class="section-sub">
+    MoE models load only active parameters per token — which nominally improves per-token memory cost. But expert routing across a batch can force loading more experts than K. This tool quantifies the "expert loading overhead" and shows where the real operating point falls on the Roofline.
+  </div>
+  <div class="two-col">
+    <div class="panel">
+      <div class="panel-title">Configuration</div>
+      <div class="field">
+        <label>Select Model</label>
+        <select id="moe-model-select" onchange="updateMoE()"></select>
+      </div>
+      <div class="field">
+        <label>Chip</label>
+        <select id="moe-chip" onchange="updateMoE()">
+          <option value="h100" data-tflops="989" data-bw="3350">H100 SXM5</option>
+          <option value="tpu_v4" data-tflops="275" data-bw="1200">TPU v4</option>
+          <option value="h200" data-tflops="1457" data-bw="8000">H200</option>
+          <option value="a100" data-tflops="312" data-bw="2000">A100 80GB</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Precision</label>
+        <select id="moe-precision" onchange="updateMoE()">
+          <option value="2">BF16 (2 bytes)</option>
+          <option value="1">INT8 (1 byte)</option>
+          <option value="0.5">INT4 (0.5 bytes)</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Batch Size: <span id="moe-batch-label">1</span></label>
+        <input type="range" id="moe-batch" min="1" max="128" value="1" oninput="document.getElementById('moe-batch-label').textContent=this.value;updateMoE()">
+        <div class="range-row"><span>1</span><span>128</span></div>
+      </div>
+      <div class="field">
+        <label>Expert Loading Overhead: <span id="moe-overhead-label">1.0×</span></label>
+        <input type="range" id="moe-overhead" min="10" max="30" value="10" oninput="document.getElementById('moe-overhead-label').textContent=(this.value/10).toFixed(1)+'×';updateMoE()">
+        <div class="range-row"><span>1.0× (ideal)</span><span>3.0× (full batch routing)</span></div>
+      </div>
+
+      <div class="result-grid">
+        <div class="result-card">
+          <div class="result-label">Active Params</div>
+          <div class="result-value" id="moe-active-params">—</div>
+        </div>
+        <div class="result-card">
+          <div class="result-label">Ridge Point</div>
+          <div class="result-value" id="moe-ridge">—</div>
+        </div>
+        <div class="result-card">
+          <div class="result-label">Arith. Intensity</div>
+          <div class="result-value" id="moe-ai">—</div>
+        </div>
+        <div class="result-card">
+          <div class="result-label">MXU Utilization</div>
+          <div class="result-value" id="moe-util">—</div>
+        </div>
+      </div>
+      <div class="insight" id="moe-insight"></div>
+    </div>
+    <div class="panel">
+      <div class="panel-title">Roofline Chart</div>
+      <div class="chart-wrap"><canvas id="moe-chart"></canvas></div>
+    </div>
+  </div>
+</div>
+
+<!-- ─────────────────────────────────────────────
+     TAB 3: Speculative Decoding Amortizer
+───────────────────────────────────────────── -->
+<div id="tab-speculative" class="section">
+  <div class="section-title">Speculative Decoding — Amortized Roofline</div>
+  <div class="section-sub">
+    Speculative decoding uses a small draft model to propose γ tokens, then a large verifier validates them in parallel. The verifier's forward pass over γ tokens is matrix-matrix (not matrix-vector) — increasing arithmetic intensity. This "amortization" moves the operating point rightward on the Roofline. Based on the Amortization Roofline Model from <a href="https://arxiv.org/abs/2511.14102" target="_blank" style="color:#58a6ff">MoE-SpeQ (2025)</a>.
+  </div>
+  <div class="two-col">
+    <div class="panel">
+      <div class="panel-title">Configuration</div>
+      <div class="field">
+        <label>Verifier Model (large)</label>
+        <select id="spec-verifier" onchange="updateSpec()">
+          <option value="70">Llama 3.1 70B</option>
+          <option value="405">Llama 3.1 405B</option>
+          <option value="72">Qwen2.5-72B</option>
+          <option value="37">DeepSeek-V3 (37B active)</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Draft Model (small)</label>
+        <select id="spec-draft" onchange="updateSpec()">
+          <option value="1">Llama 3.2 1B</option>
+          <option value="3">Llama 3.2 3B</option>
+          <option value="7">Llama 3.1 8B</option>
+          <option value="14">Phi-4 14B</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Chip</label>
+        <select id="spec-chip" onchange="updateSpec()">
+          <option value="h100" data-tflops="989" data-bw="3350">H100 SXM5</option>
+          <option value="tpu_v4" data-tflops="275" data-bw="1200">TPU v4</option>
+          <option value="h200" data-tflops="1457" data-bw="8000">H200</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Speculation Length (γ): <span id="spec-gamma-label">4</span> tokens</label>
+        <input type="range" id="spec-gamma" min="1" max="16" value="4" oninput="document.getElementById('spec-gamma-label').textContent=this.value;updateSpec()">
+        <div class="range-row"><span>1</span><span>16</span></div>
+      </div>
+      <div class="field">
+        <label>Acceptance Rate (α): <span id="spec-alpha-label">70</span>%</label>
+        <input type="range" id="spec-alpha" min="10" max="100" value="70" oninput="document.getElementById('spec-alpha-label').textContent=this.value;updateSpec()">
+        <div class="range-row"><span>10%</span><span>100%</span></div>
+      </div>
+
+      <div class="result-grid">
+        <div class="result-card">
+          <div class="result-label">Baseline AI (decode)</div>
+          <div class="result-value" id="spec-baseline-ai">—</div>
+        </div>
+        <div class="result-card">
+          <div class="result-label">Amortized AI</div>
+          <div class="result-value green" id="spec-amortized-ai">—</div>
+        </div>
+        <div class="result-card">
+          <div class="result-label">AI Gain</div>
+          <div class="result-value green" id="spec-gain">—</div>
+        </div>
+        <div class="result-card">
+          <div class="result-label">Tokens/Round</div>
+          <div class="result-value" id="spec-tokens-round">—</div>
+        </div>
+      </div>
+      <div class="insight info" id="spec-insight"></div>
+    </div>
+    <div class="panel">
+      <div class="panel-title">Roofline — Baseline vs Amortized Operating Point</div>
+      <div class="chart-wrap"><canvas id="spec-chart"></canvas></div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ─────────────── DATA ───────────────
+const MODELS = [
+  // Dense
+  {name:"Llama 3.1 8B",   provider:"Meta",      type:"dense", total:8,   active:8,   mmlu:73.0, math:51.9, lcb:null,  hbm_gb:16,  notes:"Efficient small model"},
+  {name:"Phi-4 14B",      provider:"Microsoft", type:"dense", total:14,  active:14,  mmlu:83.9, math:null, lcb:null,  hbm_gb:28,  notes:"Punches above weight"},
+  {name:"Llama 3.1 70B",  provider:"Meta",      type:"dense", total:70,  active:70,  mmlu:82.0, math:68.0, lcb:null,  hbm_gb:140, notes:"Best 70B, 2× A100"},
+  {name:"Qwen2.5-72B",    provider:"Alibaba",   type:"dense", total:72,  active:72,  mmlu:86.1, math:83.1, lcb:null,  hbm_gb:144, notes:"Strong all-rounder"},
+  {name:"Mistral Large 3",provider:"Mistral",   type:"dense", total:123, active:123, mmlu:87.1, math:null, lcb:null,  hbm_gb:246, notes:"Large dense model"},
+  {name:"Llama 3.1 405B", provider:"Meta",      type:"dense", total:405, active:405, mmlu:88.6, math:73.8, lcb:null,  hbm_gb:810, notes:"Frontier dense model"},
+  // MoE
+  {name:"Mixtral 8×7B",   provider:"Mistral",   type:"moe",   total:46.7,active:12.9,mmlu:70.6, math:28.4, lcb:null,  hbm_gb:94,  notes:"Classic MoE: 8 experts, 2 active"},
+  {name:"Mixtral 8×22B",  provider:"Mistral",   type:"moe",   total:141, active:39,  mmlu:77.8, math:41.8, lcb:null,  hbm_gb:282, notes:"8 experts, 2 active"},
+  {name:"Llama 4 Scout",  provider:"Meta",      type:"moe",   total:109, active:17,  mmlu:null, math:null, lcb:32.8,  hbm_gb:218, notes:"16 experts, 1 active"},
+  {name:"Llama 4 Maverick",provider:"Meta",     type:"moe",   total:400, active:17,  mmlu:89.4, math:89.4, lcb:43.4,  hbm_gb:800, notes:"128 experts, 1 active"},
+  {name:"Qwen3-235B-A22B",provider:"Alibaba",   type:"moe",   total:235, active:22,  mmlu:87.8, math:71.8, lcb:70.7,  hbm_gb:470, notes:"235B total, 22B active"},
+  {name:"DeepSeek-V3",    provider:"DeepSeek",  type:"moe",   total:671, active:37,  mmlu:88.5, math:90.2, lcb:49.2,  hbm_gb:1342,notes:"671B MoE, 37B active"},
+  {name:"DeepSeek R1",    provider:"DeepSeek",  type:"moe",   total:671, active:37,  mmlu:90.8, math:97.3, lcb:65.9,  hbm_gb:1342,notes:"R1 reasoning, 671B MoE"},
+];
+
+const CHIPS = {
+  h100:   {name:"H100 SXM5", tflops:989,  bw:3350},
+  h200:   {name:"H200 SXM5", tflops:1457, bw:8000},
+  a100:   {name:"A100 80GB", tflops:312,  bw:2000},
+  tpu_v4: {name:"TPU v4",    tflops:275,  bw:1200},
+};
+
+// ─────────────── TAB SWITCHING ───────────────
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  const idx = ['frontier','moe','speculative'].indexOf(name);
+  document.querySelectorAll('.tab')[idx].classList.add('active');
+  document.getElementById('tab-'+name).classList.add('active');
+}
+
+// ─────────────── TAB 1: FRONTIER CHART ───────────────
+let frontierChart;
+function buildFrontierChart() {
+  const denseData = MODELS.filter(m=>m.type==='dense'&&m.mmlu).map(m=>({
+    x: m.active, y: m.mmlu, label: m.name
+  }));
+  const moeData = MODELS.filter(m=>m.type==='moe'&&m.mmlu).map(m=>({
+    x: m.active, y: m.mmlu, label: m.name, total: m.total
+  }));
+
+  frontierChart = new Chart(document.getElementById('frontier-chart').getContext('2d'), {
+    type:'scatter',
+    data:{
+      datasets:[
+        {
+          label:'Dense models',
+          data: denseData,
+          backgroundColor:'#1f6feb',
+          borderColor:'#58a6ff',
+          pointRadius: denseData.map(d=>Math.max(5,Math.min(16,Math.sqrt(d.x)*1.5))),
+          pointHoverRadius: denseData.map(d=>Math.max(7,Math.min(18,Math.sqrt(d.x)*1.5+2))),
+        },
+        {
+          label:'MoE models (active params)',
+          data: moeData,
+          backgroundColor:'#8957e5',
+          borderColor:'#c9acff',
+          pointRadius: moeData.map(d=>Math.max(5,Math.min(16,Math.sqrt(d.total)*0.8))),
+          pointHoverRadius: moeData.map(d=>Math.max(7,Math.min(18,Math.sqrt(d.total)*0.8+2))),
+          pointStyle:'triangle',
+        }
+      ]
+    },
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      scales:{
+        x:{
+          type:'logarithmic',
+          title:{display:true,text:'Active Parameters per Token (B)',color:'#8b949e'},
+          grid:{color:'#21262d'},
+          ticks:{color:'#8b949e'},
+          min:1, max:500
+        },
+        y:{
+          title:{display:true,text:'MMLU Score (%)',color:'#8b949e'},
+          grid:{color:'#21262d'},
+          ticks:{color:'#8b949e'},
+          min:60, max:95
+        }
+      },
+      plugins:{
+        legend:{labels:{color:'#c9d1d9',boxWidth:12,font:{size:12}}},
+        tooltip:{
+          callbacks:{
+            title: items => items[0].raw.label,
+            label: item => {
+              const d = item.raw;
+              const lines = [`Active params: ${d.x}B`];
+              if(d.total) lines.push(`Total params: ${d.total}B (MoE — ${((d.x/d.total)*100).toFixed(0)}% active)`);
+              lines.push(`MMLU: ${d.y}%`);
+              return lines;
+            }
+          }
+        },
+        annotation: {}
+      }
+    }
+  });
+}
+
+function buildModelTable() {
+  const tbody = MODELS.map(m=>{
+    const ratio = m.type==='moe' ? `${((m.active/m.total)*100).toFixed(0)}%` : '100%';
+    const mmlu = m.mmlu ? m.mmlu.toFixed(1)+'%' : '—';
+    const math = m.math ? m.math.toFixed(1)+'%' : '—';
+    const badge = m.type==='moe'
+      ? `<span class="badge moe">MoE</span>`
+      : `<span class="badge dense">Dense</span>`;
+    const saving = m.type==='moe'
+      ? `<span class="delta-right">↓${(100-((m.active/m.total)*100)).toFixed(0)}% bytes/tok</span>`
+      : `<span style="color:#8b949e">—</span>`;
+    return `<tr>
+      <td>${badge} ${m.name}</td>
+      <td>${m.provider}</td>
+      <td>${m.active}B / ${m.total}B</td>
+      <td>${ratio}</td>
+      <td>${mmlu}</td>
+      <td>${math}</td>
+      <td>${saving}</td>
+    </tr>`;
+  }).join('');
+  document.getElementById('model-table').innerHTML = `
+    <thead><tr>
+      <th>Model</th><th>Provider</th><th>Active / Total</th><th>Active %</th>
+      <th>MMLU</th><th>MATH-500</th><th>vs Dense</th>
+    </tr></thead><tbody>${tbody}</tbody>`;
+}
+
+// ─────────────── TAB 2: MoE ROOFLINE ───────────────
+let moeChart;
+function buildMoEChart() {
+  moeChart = new Chart(document.getElementById('moe-chart').getContext('2d'),{
+    type:'line',
+    data:{datasets:[]},
+    options:{
+      responsive:true,maintainAspectRatio:false,
+      animation:{duration:200},
+      scales:{
+        x:{type:'logarithmic',title:{display:true,text:'Arithmetic Intensity (FLOPs/Byte)',color:'#8b949e'},grid:{color:'#21262d'},ticks:{color:'#8b949e'},min:0.1,max:1000},
+        y:{type:'logarithmic',title:{display:true,text:'Performance (TFLOPS/s)',color:'#8b949e'},grid:{color:'#21262d'},ticks:{color:'#8b949e'}}
+      },
+      plugins:{legend:{labels:{color:'#c9d1d9',boxWidth:12,font:{size:11}}},
+        tooltip:{callbacks:{label:ctx=>`${ctx.dataset.label}: ${typeof ctx.parsed.y==='number'?ctx.parsed.y.toFixed(1)+' TFLOPS/s':''}`}}}
+    }
+  });
+}
+
+// Populate MoE model selector
+function populateMoESelector() {
+  const sel = document.getElementById('moe-model-select');
+  MODELS.forEach((m,i)=>{
+    const opt = document.createElement('option');
+    opt.value = i;
+    opt.textContent = `${m.name} (${m.type==='moe'?m.active+'B active / '+m.total+'B total':m.total+'B'})`;
+    sel.appendChild(opt);
+  });
+  sel.value = 6; // Default: Mixtral 8x7B
+}
+
+function updateMoE() {
+  const model = MODELS[parseInt(document.getElementById('moe-model-select').value)];
+  const chip = CHIPS[document.getElementById('moe-chip').value];
+  const bpp = parseFloat(document.getElementById('moe-precision').value);
+  const batch = parseInt(document.getElementById('moe-batch').value);
+  const overhead = parseFloat(document.getElementById('moe-overhead').value)/10;
+  const ridge = chip.tflops * 1e12 / (chip.bw * 1e9);
+
+  // Effective bytes loaded per token = active_params * bpp * overhead (expert routing)
+  // FLOPs per token = 2 * active_params * batch (matmul approximation)
+  const effective_active = model.active * overhead;
+  const ai = (2 * model.active * batch) / (effective_active * bpp);
+  const attainable = Math.min(chip.tflops, chip.bw * ai / 1e3);
+  const util = (attainable / chip.tflops) * 100;
+  const isMemBound = ai < ridge;
+
+  document.getElementById('moe-active-params').textContent = model.active.toFixed(1)+'B';
+  document.getElementById('moe-ridge').textContent = ridge.toFixed(1)+' F/B';
+  document.getElementById('moe-ai').textContent = ai.toFixed(2)+' F/B';
+  const utilEl = document.getElementById('moe-util');
+  utilEl.textContent = util.toFixed(1)+'%';
+  utilEl.className = 'result-value ' + (util<10?'red':util<50?'orange':'green');
+
+  const banner = document.getElementById('moe-insight');
+  if(isMemBound) {
+    banner.className='insight memory';
+    const pctToRidge = (ai/ridge*100).toFixed(1);
+    banner.innerHTML=`<strong>⚠️ Memory Bound (${pctToRidge}% of ridge point)</strong>
+      MXU is waiting for data ${(100-util).toFixed(0)}% of the time. Expert routing overhead (${overhead.toFixed(1)}×) is widening the gap.
+      ${model.type==='moe'?`<br><br>MoE note: model has ${model.total}B total params but only loads ${model.active}B active. With overhead, effectively loading ${effective_active.toFixed(1)}B bytes per token.`:''}`;
+  } else {
+    banner.className='insight compute';
+    banner.innerHTML=`<strong>✅ Compute Bound</strong> MXU is fully utilized — the hardware is earning its cost.`;
+  }
+
+  // Build Roofline
+  const xs=[];
+  for(let e=-1;e<=4;e+=0.1) xs.push(Math.pow(10,e));
+  const roofline = xs.map(x=>({x,y:Math.min(chip.tflops,chip.bw*x/1e3)}));
+
+  moeChart.data.datasets=[
+    {label:`Roofline (${chip.name})`,data:roofline,borderColor:'#58a6ff',backgroundColor:'transparent',borderWidth:2.5,pointRadius:0,tension:0},
+    {label:`${model.name} (ideal, no overhead)`,data:[{x:(2*model.active*batch)/(model.active*bpp),y:Math.min(chip.tflops,chip.bw*(2*model.active*batch)/(model.active*bpp)/1e3)}],borderColor:'#3fb950',backgroundColor:'#3fb950',pointRadius:9,showLine:false},
+    {label:`${model.name} (with ${overhead.toFixed(1)}× routing overhead)`,data:[{x:ai,y:attainable}],borderColor:isMemBound?'#f85149':'#3fb950',backgroundColor:isMemBound?'#f85149':'#3fb950',pointRadius:9,pointStyle:'triangle',showLine:false},
+  ];
+  moeChart.options.scales.y.min=chip.bw*0.05;
+  moeChart.options.scales.y.max=chip.tflops*2;
+  moeChart.update();
+}
+
+// ─────────────── TAB 3: SPECULATIVE DECODING ───────────────
+let specChart;
+function buildSpecChart() {
+  specChart = new Chart(document.getElementById('spec-chart').getContext('2d'),{
+    type:'line',
+    data:{datasets:[]},
+    options:{
+      responsive:true,maintainAspectRatio:false,
+      animation:{duration:200},
+      scales:{
+        x:{type:'logarithmic',title:{display:true,text:'Arithmetic Intensity (FLOPs/Byte)',color:'#8b949e'},grid:{color:'#21262d'},ticks:{color:'#8b949e'},min:0.1,max:1000},
+        y:{type:'logarithmic',title:{display:true,text:'Performance (TFLOPS/s)',color:'#8b949e'},grid:{color:'#21262d'},ticks:{color:'#8b949e'}}
+      },
+      plugins:{legend:{labels:{color:'#c9d1d9',boxWidth:12,font:{size:11}}},
+        tooltip:{callbacks:{label:ctx=>`${ctx.dataset.label}: ${typeof ctx.parsed.x==='number'?ctx.parsed.x.toFixed(2)+' FLOPs/Byte':''}`}}}
+    }
+  });
+}
+
+function updateSpec() {
+  const Nv = parseFloat(document.getElementById('spec-verifier').value); // B params
+  const Nd = parseFloat(document.getElementById('spec-draft').value);    // B params
+  const chip = CHIPS[document.getElementById('spec-chip').value];
+  const gamma = parseInt(document.getElementById('spec-gamma').value);
+  const alpha = parseFloat(document.getElementById('spec-alpha').value)/100;
+  const bpp = 2; // BF16
+
+  const ridge = chip.tflops*1e12/(chip.bw*1e9);
+
+  // Baseline: standard decode of verifier (single token, batch=1)
+  // AI = 2*Nv / (Nv*bpp) = 2/bpp
+  const ai_baseline = 2/bpp;  // = 1 for BF16
+
+  // Speculative decoding amortized AI:
+  // Verifier forward pass processes gamma tokens in parallel → matrix-matrix
+  //   Verifier FLOPs = 2 * Nv * gamma
+  //   Verifier bytes = Nv * bpp (weights loaded once)
+  // Draft model runs gamma sequential steps:
+  //   Draft FLOPs = 2 * Nd * gamma
+  //   Draft bytes = Nd * bpp * gamma (weights loaded each step, batch=1)
+  // Expected verified tokens per round = alpha * gamma + 1 (last token always verified)
+  // Amortized per verified token:
+  //   Total FLOPs = 2*(Nv+Nd)*gamma
+  //   Total bytes = Nv*bpp + Nd*bpp*gamma
+  //   AI_amortized = Total_FLOPs / Total_bytes
+  const total_flops = 2*(Nv+Nd)*gamma;
+  const total_bytes = Nv*bpp + Nd*bpp*gamma;
+  const ai_amortized = total_flops/total_bytes;
+
+  const tokens_per_round = alpha*gamma+1;
+  const gain = ai_amortized/ai_baseline;
+
+  const att_baseline = Math.min(chip.tflops, chip.bw*ai_baseline/1e3);
+  const att_amortized = Math.min(chip.tflops, chip.bw*ai_amortized/1e3);
+
+  document.getElementById('spec-baseline-ai').textContent = ai_baseline.toFixed(2)+' F/B';
+  document.getElementById('spec-amortized-ai').textContent = ai_amortized.toFixed(2)+' F/B';
+  document.getElementById('spec-gain').textContent = gain.toFixed(1)+'×';
+  document.getElementById('spec-tokens-round').textContent = tokens_per_round.toFixed(1);
+
+  const still_mem_bound = ai_amortized < ridge;
+  const pct_to_ridge = (ai_amortized/ridge*100).toFixed(1);
+  const insight = document.getElementById('spec-insight');
+  insight.className='insight info';
+  insight.innerHTML=`<strong>Amortization effect</strong>
+    Baseline decode (verifier alone, batch=1): <strong>${ai_baseline.toFixed(2)} FLOPs/Byte</strong><br>
+    With speculation γ=${gamma}, α=${(alpha*100).toFixed(0)}%: <strong>${ai_amortized.toFixed(2)} FLOPs/Byte (${gain.toFixed(1)}× higher)</strong><br>
+    ${still_mem_bound
+      ? `Still memory bound, but at ${pct_to_ridge}% of ridge point. To reach compute-bound zone, increase γ or accept lower Nd/Nv ratio.`
+      : `✅ Now compute bound — speculation has fully amortized the memory bottleneck.`}
+    <br><br>Key lever: larger γ (more speculation) and higher α (better draft quality) both push AI right on the Roofline.`;
+
+  // Build chart
+  const xs=[];
+  for(let e=-1;e<=4;e+=0.1) xs.push(Math.pow(10,e));
+  const roofline = xs.map(x=>({x,y:Math.min(chip.tflops,chip.bw*x/1e3)}));
+
+  specChart.data.datasets=[
+    {label:`Roofline (${chip.name})`,data:roofline,borderColor:'#58a6ff',backgroundColor:'transparent',borderWidth:2.5,pointRadius:0,tension:0},
+    {label:`Baseline decode (${Nv}B, batch=1)`,data:[{x:ai_baseline,y:att_baseline}],borderColor:'#f85149',backgroundColor:'#f85149',pointRadius:10,showLine:false},
+    {label:`Amortized (γ=${gamma}, α=${(alpha*100).toFixed(0)}%)`,data:[{x:ai_amortized,y:att_amortized}],borderColor:'#3fb950',backgroundColor:'#3fb950',pointRadius:10,pointStyle:'triangle',showLine:false},
+    {label:`Ridge point (${ridge.toFixed(0)} F/B)`,data:[{x:ridge,y:chip.tflops}],borderColor:'#d29922',backgroundColor:'#d29922',pointRadius:8,pointStyle:'crossRot',showLine:false},
+  ];
+  specChart.options.scales.y.min=chip.bw*0.05;
+  specChart.options.scales.y.max=chip.tflops*2;
+  specChart.update();
+}
+
+// ─────────────── INIT ───────────────
+buildFrontierChart();
+buildModelTable();
+buildMoEChart();
+populateMoESelector();
+buildSpecChart();
+updateMoE();
+updateSpec();
+</script>
+</body>
+</html>
