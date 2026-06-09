@@ -2,10 +2,10 @@
 
 **By Mona Mishra · Feb 24, 2026**
 
-![GitHub Stars](https://img.shields.io/github/stars/yourusername/roofline-model-llm-inference?style=social)
+![GitHub Stars](https://img.shields.io/github/stars/monamishra95/roofline-model-llm-inference?style=social)
 ![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)
 
-> *Part 1 of 2 — This post builds the framework. [Part 2](./PART2_PREVIEW.md) outlines the levers teams can pull.*
+> *Part 1 of 2 — This post builds the framework. **[Part 2: The Levers](./PART2.md)** covers six ways to fix a memory-bound workload.*
 
 ---
 
@@ -265,7 +265,7 @@ python scripts/arithmetic_intensity.py --model 70b --precision bf16 --chip h100 
 | ③ Speculative Decoding Amortizer | How a small draft model raises arithmetic intensity of the large verifier — and by how much. Based on [MoE-SpeQ (arXiv 2511.14102)](https://arxiv.org/abs/2511.14102). |
 | ④ Disaggregated Prefill / Decode | Why prefill and decode cannot be optimally served by the same chip — their arithmetic intensities differ by 100–500×. The hardware co-design case for specialization, based on [SPAD (arXiv 2510.08544)](https://arxiv.org/abs/2510.08544). |
 
-**→ [Part 2 Preview](./PART2_PREVIEW.md)** — the levers: batching, quantization, speculative decoding, and more.
+**→ [Part 2: The Levers](./PART2.md)** — six ways to fix a memory-bound LLM workload: batching, quantization, speculative decoding, KV cache reduction, disaggregated serving, and hardware selection.
 
 ---
 
