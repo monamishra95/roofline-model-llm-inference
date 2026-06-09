@@ -26,7 +26,7 @@
 ## TL;DR
 
 - **FLOPS** (Floating Point Operations Per Second) measures compute speed. Modern AI chips do hundreds of trillions per second.
-- A **TPU** has three core components: the **MXU** (math engine), **HBM** (fast memory), and **ICI** (chip-to-chip network). The speed gap between these parts is where compute spend goes to waste.
+- A **TPU** has three core components: the **MXU** (math engine), **HBM** (fast memory), and **ICI** (chip-to-chip network). The speed gap between these parts is where compute spend is underutilized.
 - The **Roofline Model** is a chart that tells you whether your workload is bottlenecked by math speed or memory bandwidth. It answers: *"What is the physical limit of this chip for this specific algorithm?"*
 - **Almost all LLM inference is Memory Bound by default** — meaning organizations are paying for compute horsepower they structurally cannot use.
 - Knowing which zone a workload sits in is the prerequisite for every hardware and architecture decision that follows.
@@ -35,7 +35,7 @@
 
 ## The Problem
 
-It's a hot, humid afternoon in Council Bluffs, Iowa, in Google's large data center. The chips doing AI reasoning are probably idle right now.
+It's a hot, humid afternoon in Council Bluffs, Iowa, in Google's large data center. Understandably, the sultry weather means the AI chips doing reasoning are probably idle right now.
 
 On most LLM inference deployments, modern GPUs and TPUs spend the majority of their cycles **waiting** — stalled, starved of data, not performing calculations. A team could buy twice the compute, and their model wouldn't produce a single token faster. The bottleneck isn't the chip's brain. **It's the path from the chip's brain to its memory.**
 
@@ -58,19 +58,19 @@ A **floating point operation (FLOP)** is one of the elementary arithmetic operat
 | 10¹⁵ FLOPs/sec | **PFLOPS** | Quadrillions/sec — large GPU clusters |
 | 10¹⁸ FLOPs/sec | **EFLOPS** | Quintillions/sec — Google's TPU v4 pod (1.1 exaflops) |
 
-> **Key takeaway:** A TPU v4 pod of 4,096 chips can perform 1.1 quintillion math operations per second. And yet, if the wrong model architecture is deployed, it will still be idle. More speed is not always the answer.
+> **Key takeaway:** A TPU v4 pod of 4,096 chips can perform 1.1 quintillion math operations per second. And yet, if the wrong model architecture is deployed, it will still be idle. More speed is not always the right answer.
 
 ### Precision: Not All FLOPs Are Created Equal
 
-The "precision" refers to how many bits are used to represent numerical values. It impacts model accuracy, speed, efficiency, and energy consumption.
+"Precision" refers to how many bits are used to represent numerical values in computations (ie, weights, activations and gradients in training or inference). It impacts model accuracy, speed, efficiency, and energy consumption. Not all FLOPs cost the same, and neither are they equally accurate. 
 
 | Format | Bits | Use Case |
 |--------|------|----------|
 | **FP64** | 64 | Scientific-grade workloads (physics simulation, HPC) |
-| **FP32** | 32 | Traditional training; high precision, slower |
+| **FP32** | 32 | Traditional training; high precision, slower, good for general purpose AI tasks |
 | **BF16 / FP16** | 16 | Current standard for LLM training and inference |
 | **INT8** | 8 | Quantized inference; 2× memory efficiency vs. BF16 |
-| **FP4 / INT4** | 4 | Aggressive quantization for edge AI; 4× efficiency vs. BF16 |
+| **FP4 / INT4** | 4 | Aggressive quantization for edge AI where efficiency is critical; 4× efficiency vs. BF16 |
 
 > **Key takeaway:** Lower precision = fewer bytes per parameter = more data fitting into memory bandwidth.
 
@@ -78,7 +78,7 @@ The "precision" refers to how many bits are used to represent numerical values. 
 
 ## Section 2 — Inside the Machine: The Anatomy of a TPU
 
-Google built the TPU because general-purpose CPUs and GPUs could be made more architecturally efficient for the dominant operation in deep learning: **matrix multiplication**. Every design decision — memory architecture, interconnect, compute layout — reflects that singular focus.
+The dominant operation in deep learning is  **matrix multiplication**. Google built the TPU to improve on the architectural efficiency of general-purpose CPUs and GPUs for **matrix multiplication**. Every design decision — memory architecture, interconnect, compute layout — reflects that singular focus.
 
 A single TPU chip has three main components:
 
@@ -118,7 +118,7 @@ Every weight, every activation, every KV cache entry must be loaded into HBM bef
 
 ### Component 3: ICI (Inter Chip Interconnect) — The Chip-to-Chip Network
 
-Since frontier models exceed single-chip capacity, they must be **sharded** across pods of thousands of chips. The ICI is the high-speed fabric connecting them.
+Since frontier models exceed single-chip capacity, they must be **sharded** across pods of thousands of chips. The ICI is the high-speed fabric connecting them. Sharding means splitting a model's massive parameters into smaller chunks.
 
 - **Architecture:** TPU v4 uses a 3D torus topology, directly linking each chip to its six nearest neighbors
 - **Throughput:** 1.1 PB/s all-reduce bandwidth per pod — bypassing the high-latency PCIe CPU-host bottlenecks typical of GPU setups
