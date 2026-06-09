@@ -248,7 +248,7 @@ The chip already knows how fast it can go. The question is whether the architect
 
 ## Try It Yourself
 
-**→ [Interactive Roofline Calculator](./calculator/index.html)** — plug in your chip's specs, see your ridge point and zone classification with a live chart.
+**→ [Interactive Roofline Calculator](https://monamishra95.github.io/roofline-model-llm-inference/calculator/)** — plug in your chip's specs, see your ridge point and zone classification with a live chart.
 
 **→ [Arithmetic Intensity Estimator](./scripts/arithmetic_intensity.py)** — run this Python script to estimate where your LLM workload sits on the Roofline.
 
