@@ -2,7 +2,7 @@
 
 **By Mona Mishra · Feb 24, 2026**
 
-![GitHub Stars](https://img.shields.io/github/stars/yourusername/roofline-model-llm-inference?style=social)
+![GitHub Stars](https://img.shields.io/github/stars/monamishra95/roofline-model-llm-inference?style=social)
 ![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)
 
 > *Part 1 of 2 — This post builds the framework. [Part 2](./PART2_PREVIEW.md) outlines the levers teams can pull.*
