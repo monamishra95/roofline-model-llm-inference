@@ -93,6 +93,10 @@
   <button class="tab" onclick="switchTab('moe')">② MoE Roofline Placement</button>
   <button class="tab" onclick="switchTab('speculative')">③ Speculative Decoding Amortizer</button>
   <button class="tab" onclick="switchTab('disagg')">④ Disaggregated Prefill / Decode</button>
+  <button class="tab" onclick="switchTab('costperf')">⑤ Cost &amp; Performance</button>
+  <button class="tab" onclick="switchTab('mlperf')">⑥ Throughput Head-to-Head</button>
+  <button class="tab" onclick="switchTab('calculator')">⑦ Cost per 1M Tokens</button>
+  <button class="tab" onclick="switchTab('market')">⑧ Market Context</button>
 </div>
 
 <!-- ─────────────────────────────────────────────
@@ -366,6 +370,115 @@
   <div style="font-size:.75rem;color:#8b949e;text-align:right">By Mona Mishra · Based on <a href="https://arxiv.org/abs/2511.14102" style="color:#58a6ff" target="_blank">MoE-SpeQ</a>, <a href="https://arxiv.org/abs/2510.08544" style="color:#58a6ff" target="_blank">SPAD</a>, and HuggingFace Open LLM Leaderboard v2</div>
 </div>
 
+
+<!-- ─────────────────────────────────────────────
+     TAB 5: Cost & Performance Trends
+───────────────────────────────────────────── -->
+<div id="tab-costperf" class="section">
+  <div class="section-title">Performance per Dollar</div>
+  <div class="section-sub">
+    Peak FP16 TFLOP/s per $1,000 of list price, across the same chip set used in the Roofline tabs above.
+    Chips sold only through cloud rental (all TPUs, Trainium) have no public list price and are excluded here — see the cost-per-token tab for those.
+  </div>
+  <div class="panel">
+    <div class="chart-wrap-tall"><canvas id="costperf-chart"></canvas></div>
+    <p class="source-note">Hardware specs adapted from <a href="https://epoch.ai/data/machine-learning-hardware" target="_blank">Epoch AI</a> (CC-BY 4.0)</p>
+  </div>
+</div>
+
+<!-- ─────────────────────────────────────────────
+     TAB 6: MLPerf Head-to-Head
+───────────────────────────────────────────── -->
+<div id="tab-mlperf" class="section">
+  <div class="section-title">Inference Throughput by Chip</div>
+  <div class="section-sub">
+    <strong style="color:#d29922">Illustrative, not current-gen.</strong> These figures cover H100 / B200 / TPU v5p / TPU v6e / MI300X — the same older-generation chip set as tabs ①–④, kept deliberately so the whole page tells one consistent story. They are <em>not</em> drawn from live MLPerf submissions: none of these chips appear in the actual
+    <a href="https://mlcommons.org/2026/04/mlperf-inference-v6-0-results/" target="_blank" style="color:#58a6ff">MLPerf Inference v6.0 results</a> (April 2026), where the field has moved to AMD MI355X, NVIDIA B300-SXM and NVIDIA RTX PRO 6000 Blackwell running at FP4, and Google did not submit at all. Treat what follows as directionally useful for learning the framework, not as citable benchmark data.
+  </div>
+  <div class="panel">
+    <div class="field" style="max-width:280px">
+      <label>Workload</label>
+      <select id="mlperf-workload-select" onchange="updateMLPerf()"></select>
+    </div>
+    <div class="chart-wrap"><canvas id="mlperf-chart"></canvas></div>
+  </div>
+</div>
+
+<!-- ─────────────────────────────────────────────
+     TAB 7: Cost per 1M Tokens
+───────────────────────────────────────────── -->
+<div id="tab-calculator" class="section">
+  <div class="section-title">Effective Cost per 1M Tokens</div>
+  <div class="section-sub">
+    Throughput × utilization × cloud list price. Cloud pricing was verified against live provider pages on 2026-07-12; throughput inherits the same <strong style="color:#d29922">illustrative, not current-gen</strong> caveat as the tab above.
+  </div>
+  <div class="two-col">
+    <div class="panel">
+      <div class="panel-title">Configuration</div>
+      <div class="field">
+        <label>Chip</label>
+        <select id="calc-chip" onchange="updateCalculator()"></select>
+      </div>
+      <div class="field">
+        <label>Cloud</label>
+        <select id="calc-cloud" onchange="updateCalculator()">
+          <option value="gcp">Google Cloud</option>
+          <option value="aws">AWS</option>
+          <option value="azure">Azure</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Utilization: <span id="calc-util-label">50</span>%</label>
+        <input type="range" id="calc-util" min="10" max="100" value="50" step="5" oninput="document.getElementById('calc-util-label').textContent=this.value;updateCalculator()">
+        <div class="range-row"><span>10%</span><span>100%</span></div>
+      </div>
+      <div class="result-grid">
+        <div class="result-card">
+          <div class="result-label">Cost per 1M Tokens</div>
+          <div class="result-value green" id="calc-cost-value">—</div>
+        </div>
+        <div class="result-card">
+          <div class="result-label">Effective Throughput</div>
+          <div class="result-value" id="calc-throughput-value">—</div>
+        </div>
+      </div>
+      <div class="insight info" id="calc-insight"></div>
+    </div>
+    <div class="panel">
+      <div class="panel-title">Cost Comparison — Same Cloud, Same Utilization</div>
+      <div class="chart-wrap"><canvas id="calc-chart"></canvas></div>
+    </div>
+  </div>
+</div>
+
+<!-- ─────────────────────────────────────────────
+     TAB 8: Market Context
+───────────────────────────────────────────── -->
+<div id="tab-market" class="section">
+  <div class="section-title">Cloud Market Context</div>
+  <div class="section-sub">
+    The commercial backdrop to everything above: who is buying this compute, and how fast that spend is growing.
+  </div>
+  <div class="result-grid" style="grid-template-columns:repeat(3,1fr)">
+    <div class="result-card">
+      <div class="result-label">Quarter</div>
+      <div class="result-value" id="market-quarter">—</div>
+    </div>
+    <div class="result-card">
+      <div class="result-label">Cloud Infra Spend</div>
+      <div class="result-value" id="market-spend">—</div>
+    </div>
+    <div class="result-card">
+      <div class="result-label">YoY Growth</div>
+      <div class="result-value green" id="market-growth">—</div>
+    </div>
+  </div>
+  <div class="panel">
+    <div class="chart-wrap"><canvas id="market-chart"></canvas></div>
+    <p class="source-note" id="market-source"></p>
+  </div>
+</div>
+
 <script>
 // ─────────────── DATA ───────────────
 const MODELS = [
@@ -397,7 +510,7 @@ const CHIPS = {
 function switchTab(name) {
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
-  const idx = ['frontier','moe','speculative','disagg'].indexOf(name);
+  const idx = ['frontier','moe','speculative','disagg','costperf','mlperf','calculator','market'].indexOf(name);
   document.querySelectorAll('.tab')[idx].classList.add('active');
   document.getElementById('tab-'+name).classList.add('active');
 }
@@ -523,4 +636,386 @@ function buildMoEChart() {
 function populateMoESelector() {
   const sel = document.getElementById('moe-model-select');
   MODELS.forEach((m,i)=>{
-    const 
+    const o = document.createElement('option');
+    o.value = i;
+    o.textContent = m.name + ' (' + m.active + 'B active / ' + m.total + 'B total)';
+    if (m.name === 'DeepSeek-V3') o.selected = true;
+    sel.appendChild(o);
+  });
+}
+
+function chipFromSelect(id) {
+  const sel = document.getElementById(id);
+  const opt = sel.options[sel.selectedIndex];
+  return { tflops: parseFloat(opt.dataset.tflops), bw: parseFloat(opt.dataset.bw), name: opt.textContent.trim() };
+}
+
+// Roofline helpers — match the conventions in scripts/arithmetic_intensity.py
+// ridge point (FLOPs/Byte) = peak TFLOPS * 1e12 / (bandwidth GB/s * 1e9)
+function ridgePoint(tflops, bw) { return tflops * 1000 / bw; }
+// attainable performance in TFLOPS/s = min(peak, bandwidth * intensity)
+function attainable(tflops, bw, ai) { return Math.min(tflops, bw * ai / 1000); }
+
+function rooflineCurve(tflops, bw) {
+  const pts = [];
+  for (let e = -1; e <= 4; e += 0.1) {
+    const x = Math.pow(10, e);
+    pts.push({ x: x, y: attainable(tflops, bw, x) });
+  }
+  return pts;
+}
+
+function updateMoE() {
+  const m = MODELS[parseInt(document.getElementById('moe-model-select').value, 10)];
+  const chip = chipFromSelect('moe-chip');
+  const bpp = parseFloat(document.getElementById('moe-precision').value);
+  const batch = parseFloat(document.getElementById('moe-batch').value);
+  const overhead = parseFloat(document.getElementById('moe-overhead').value) / 10;
+
+  const ridge = ridgePoint(chip.tflops, chip.bw);
+  const idealAI = batch / bpp;
+  const ai = batch / (bpp * overhead);
+  const perf = attainable(chip.tflops, chip.bw, ai);
+  const util = (perf / chip.tflops) * 100;
+  const isMemoryBound = ai < ridge;
+
+  document.getElementById('moe-active-params').textContent = m.active + 'B';
+  document.getElementById('moe-ridge').textContent = ridge.toFixed(1);
+  document.getElementById('moe-ai').textContent = ai.toFixed(2);
+  const utilEl = document.getElementById('moe-util');
+  utilEl.textContent = util.toFixed(1) + '%';
+  utilEl.className = 'result-value ' + (util < 10 ? 'red' : util < 60 ? 'orange' : 'green');
+
+  const insight = document.getElementById('moe-insight');
+  insight.className = 'insight ' + (isMemoryBound ? 'memory' : 'compute');
+  if (isMemoryBound) {
+    const activeShare = m.type === 'moe' ? ((m.active / m.total) * 100).toFixed(0) + '% of its ' + m.total + 'B weights' : 'all ' + m.total + 'B weights';
+    insight.innerHTML = '<strong>Memory Bound</strong>' +
+      m.name + ' loads ' + activeShare + ' per token. At batch ' + batch + ' with ' + overhead.toFixed(1) +
+      '× expert-loading overhead, intensity is ' + ai.toFixed(2) + ' FLOPs/Byte against a ridge point of ' +
+      ridge.toFixed(1) + ' — the MXU sits idle ' + (100 - util).toFixed(0) + '% of the time. ' +
+      'Overhead alone costs ' + (idealAI / ai).toFixed(1) + '× of the achievable intensity.';
+  } else {
+    insight.innerHTML = '<strong>Compute Bound</strong>' +
+      'At batch ' + batch + ', intensity (' + ai.toFixed(2) + ' FLOPs/Byte) clears the ridge point of ' +
+      ridge.toFixed(1) + '. The memory pipe is saturated and the MXU is running near peak.';
+  }
+
+  moeChart.data.datasets = [
+    { label: 'Roofline (' + chip.name + ')', data: rooflineCurve(chip.tflops, chip.bw), borderColor: '#58a6ff', backgroundColor: 'transparent', borderWidth: 2.5, pointRadius: 0, tension: 0 },
+    { label: 'Ideal (no expert overhead)', data: [{ x: idealAI, y: attainable(chip.tflops, chip.bw, idealAI) }], borderColor: '#8957e5', backgroundColor: '#8957e5', pointRadius: 7, pointHoverRadius: 9, showLine: false },
+    { label: 'Actual (' + overhead.toFixed(1) + '× overhead)', data: [{ x: ai, y: perf }], borderColor: isMemoryBound ? '#f85149' : '#3fb950', backgroundColor: isMemoryBound ? '#f85149' : '#3fb950', pointRadius: 9, pointHoverRadius: 11, showLine: false }
+  ];
+  moeChart.options.scales.y.min = Math.max(0.1, chip.bw * 0.05);
+  moeChart.options.scales.y.max = chip.tflops * 2;
+  moeChart.update();
+}
+
+// ─────────────── TAB 3: SPECULATIVE DECODING ───────────────
+let specChart;
+function buildSpecChart() {
+  specChart = new Chart(document.getElementById('spec-chart').getContext('2d'), {
+    type: 'line',
+    data: { datasets: [] },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      animation: { duration: 200 },
+      scales: {
+        x: { type: 'logarithmic', title: { display: true, text: 'Arithmetic Intensity (FLOPs/Byte)', color: '#8b949e' }, grid: { color: '#21262d' }, ticks: { color: '#8b949e' }, min: 0.1, max: 1000 },
+        y: { type: 'logarithmic', title: { display: true, text: 'Performance (TFLOPS/s)', color: '#8b949e' }, grid: { color: '#21262d' }, ticks: { color: '#8b949e' } }
+      },
+      plugins: {
+        legend: { labels: { color: '#c9d1d9', boxWidth: 12, font: { size: 11 } } },
+        tooltip: { callbacks: { label: ctx => ctx.dataset.label + ': ' + (typeof ctx.parsed.y === 'number' ? ctx.parsed.y.toFixed(1) + ' TFLOPS/s' : '') } }
+      }
+    }
+  });
+}
+
+function updateSpec() {
+  const chip = chipFromSelect('spec-chip');
+  const gamma = parseFloat(document.getElementById('spec-gamma').value);
+  const alpha = parseFloat(document.getElementById('spec-alpha').value) / 100;
+  const bpp = 2; // BF16
+
+  const ridge = ridgePoint(chip.tflops, chip.bw);
+  // Baseline: autoregressive decode at batch 1 is a matrix-vector op.
+  const baselineAI = 1 / bpp;
+  // Expected tokens accepted per verification round (standard speculative decoding):
+  //   E = (1 - alpha^(gamma+1)) / (1 - alpha), which tends to gamma+1 as alpha -> 1.
+  const E = alpha >= 1 ? (gamma + 1) : (1 - Math.pow(alpha, gamma + 1)) / (1 - alpha);
+  // The verifier's pass covers those tokens at once, so intensity scales with E.
+  const amortAI = E / bpp;
+  const gain = amortAI / baselineAI;
+
+  const basePerf = attainable(chip.tflops, chip.bw, baselineAI);
+  const amortPerf = attainable(chip.tflops, chip.bw, amortAI);
+
+  document.getElementById('spec-baseline-ai').textContent = baselineAI.toFixed(2);
+  document.getElementById('spec-amortized-ai').textContent = amortAI.toFixed(2);
+  document.getElementById('spec-gain').textContent = gain.toFixed(2) + '×';
+  document.getElementById('spec-tokens-round').textContent = E.toFixed(2);
+
+  const insight = document.getElementById('spec-insight');
+  insight.className = 'insight info';
+  insight.innerHTML = '<strong>' + gain.toFixed(2) + '× intensity gain</strong>' +
+    'At γ=' + gamma + ' with ' + (alpha * 100).toFixed(0) + '% acceptance, the verifier clears ' + E.toFixed(2) +
+    ' tokens per round, lifting intensity from ' + baselineAI.toFixed(2) + ' to ' + amortAI.toFixed(2) +
+    ' FLOPs/Byte. Ridge point is ' + ridge.toFixed(1) + ', so the workload is still ' +
+    (amortAI < ridge ? 'memory bound — amortization narrows the gap but does not close it' : 'now compute bound') +
+    '. Note the ceiling: even at 100% acceptance the gain caps at γ+1 = ' + (gamma + 1) + '×.';
+
+  specChart.data.datasets = [
+    { label: 'Roofline (' + chip.name + ')', data: rooflineCurve(chip.tflops, chip.bw), borderColor: '#58a6ff', backgroundColor: 'transparent', borderWidth: 2.5, pointRadius: 0, tension: 0 },
+    { label: 'Baseline decode', data: [{ x: baselineAI, y: basePerf }], borderColor: '#f85149', backgroundColor: '#f85149', pointRadius: 8, pointHoverRadius: 10, showLine: false },
+    { label: 'Amortized (speculative)', data: [{ x: amortAI, y: amortPerf }], borderColor: '#3fb950', backgroundColor: '#3fb950', pointRadius: 9, pointHoverRadius: 11, showLine: false }
+  ];
+  specChart.options.scales.y.min = Math.max(0.1, chip.bw * 0.05);
+  specChart.options.scales.y.max = chip.tflops * 2;
+  specChart.update();
+}
+
+// ─────────────── TAB 4: DISAGGREGATED PREFILL / DECODE ───────────────
+let disaggChart;
+function buildDisaggChart() {
+  disaggChart = new Chart(document.getElementById('disagg-chart').getContext('2d'), {
+    type: 'line',
+    data: { datasets: [] },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      animation: { duration: 200 },
+      scales: {
+        x: { type: 'logarithmic', title: { display: true, text: 'Arithmetic Intensity (FLOPs/Byte)', color: '#8b949e' }, grid: { color: '#21262d' }, ticks: { color: '#8b949e' }, min: 0.1, max: 10000 },
+        y: { type: 'logarithmic', title: { display: true, text: 'Performance (TFLOPS/s)', color: '#8b949e' }, grid: { color: '#21262d' }, ticks: { color: '#8b949e' } }
+      },
+      plugins: {
+        legend: { labels: { color: '#c9d1d9', boxWidth: 12, font: { size: 11 } } },
+        tooltip: { callbacks: { label: ctx => ctx.dataset.label + ': ' + (typeof ctx.parsed.y === 'number' ? ctx.parsed.y.toFixed(1) + ' TFLOPS/s' : '') } }
+      }
+    }
+  });
+}
+
+function updateDisagg() {
+  const chip = chipFromSelect('disagg-chip');
+  const batch = parseFloat(document.getElementById('disagg-batch').value);
+  const seq = parseFloat(document.getElementById('disagg-seq').value);
+  const bpp = 2; // BF16
+
+  const ridge = ridgePoint(chip.tflops, chip.bw);
+  // Decode is matrix-vector: intensity scales with batch only.
+  const decodeAI = batch / bpp;
+  // Prefill is matrix-matrix: the whole prompt is processed in parallel.
+  const prefillAI = seq / bpp;
+
+  const decodePerf = attainable(chip.tflops, chip.bw, decodeAI);
+  const prefillPerf = attainable(chip.tflops, chip.bw, prefillAI);
+  const decodeUtil = (decodePerf / chip.tflops) * 100;
+  const prefillUtil = (prefillPerf / chip.tflops) * 100;
+  const ratio = prefillAI / decodeAI;
+
+  document.getElementById('disagg-decode-ai').textContent = decodeAI.toFixed(2);
+  document.getElementById('disagg-prefill-ai').textContent = prefillAI.toFixed(0);
+  document.getElementById('disagg-decode-util').textContent = decodeUtil.toFixed(2) + '%';
+  const pUtil = document.getElementById('disagg-prefill-util');
+  pUtil.textContent = prefillUtil.toFixed(1) + '%';
+  pUtil.className = 'result-value ' + (prefillUtil < 10 ? 'red' : prefillUtil < 60 ? 'orange' : 'green');
+
+  const insight = document.getElementById('disagg-insight');
+  insight.className = 'insight ' + (prefillUtil > decodeUtil * 5 ? 'memory' : 'compute');
+  insight.innerHTML = '<strong>' + ratio.toFixed(0) + '× intensity mismatch</strong>' +
+    'On the same ' + chip.name + ', prefill runs at ' + prefillUtil.toFixed(1) + '% MXU utilization while decode runs at ' +
+    decodeUtil.toFixed(2) + '%. One chip cannot be optimal for both: sizing it for prefill strands memory bandwidth, ' +
+    'sizing it for decode strands compute. This is the structural argument for serving the two phases on different silicon.';
+
+  disaggChart.data.datasets = [
+    { label: 'Roofline (' + chip.name + ')', data: rooflineCurve(chip.tflops, chip.bw), borderColor: '#58a6ff', backgroundColor: 'transparent', borderWidth: 2.5, pointRadius: 0, tension: 0 },
+    { label: 'Decode (batch ' + batch + ')', data: [{ x: decodeAI, y: decodePerf }], borderColor: '#f85149', backgroundColor: '#f85149', pointRadius: 9, pointHoverRadius: 11, showLine: false },
+    { label: 'Prefill (seq ' + seq + ')', data: [{ x: prefillAI, y: prefillPerf }], borderColor: '#3fb950', backgroundColor: '#3fb950', pointRadius: 9, pointHoverRadius: 11, showLine: false }
+  ];
+  disaggChart.options.scales.y.min = Math.max(0.1, chip.bw * 0.05);
+  disaggChart.options.scales.y.max = chip.tflops * 2;
+  disaggChart.update();
+}
+
+// ─────────────── INIT: TABS 1-4 ───────────────
+buildFrontierChart();
+buildModelTable();
+buildMoEChart();
+populateMoESelector();
+updateMoE();
+buildSpecChart();
+updateSpec();
+buildDisaggChart();
+updateDisagg();
+
+// ═══════════════════════════════════════════════
+//  TABS 5-8: COST, BENCHMARKS, CALCULATOR, MARKET
+// ═══════════════════════════════════════════════
+
+// Hardware specs, approximate. Live-fetch version of this data (from Epoch AI's
+// CC-BY dataset) lives in dashboard/update_data.py; this page is dependency-free
+// and static, so the constants are maintained by hand.
+const HARDWARE_ECON = [
+  {id:"NVIDIA A100 80GB", mfr:"NVIDIA", tflops:312,  mem:80,  bw:2000, price:15000},
+  {id:"NVIDIA H100 SXM",  mfr:"NVIDIA", tflops:989,  mem:80,  bw:3350, price:30000},
+  {id:"NVIDIA H200 SXM",  mfr:"NVIDIA", tflops:989,  mem:141, bw:4800, price:35000},
+  {id:"NVIDIA B200",      mfr:"NVIDIA", tflops:2250, mem:192, bw:8000, price:40000},
+  {id:"NVIDIA GB200",     mfr:"NVIDIA", tflops:2500, mem:192, bw:8000, price:60000},
+  {id:"Google TPU v4",    mfr:"Google", tflops:275,  mem:32,  bw:1200, price:null},
+  {id:"Google TPU v5e",   mfr:"Google", tflops:197,  mem:16,  bw:819,  price:null},
+  {id:"Google TPU v5p",   mfr:"Google", tflops:459,  mem:95,  bw:2765, price:null},
+  {id:"Google TPU v6e",   mfr:"Google", tflops:918,  mem:32,  bw:1640, price:null},
+  {id:"AWS Trainium2",    mfr:"Amazon", tflops:667,  mem:96,  bw:2900, price:null},
+  {id:"AMD MI300X",       mfr:"AMD",    tflops:1307, mem:192, bw:5300, price:15000},
+  {id:"AMD MI325X",       mfr:"AMD",    tflops:1307, mem:256, bw:6000, price:16000}
+];
+
+// ILLUSTRATIVE, NOT CURRENT-GEN. Deliberately the same older chip set as tabs 1-4,
+// for narrative consistency across this page. Checked against the real MLCommons
+// v6.0 release (April 2026): none of these chips appear in that round — the field
+// has moved to AMD MI355X, NVIDIA B300-SXM and NVIDIA RTX PRO 6000 Blackwell at FP4,
+// and Google did not submit. These figures teach the framework; they are not
+// citable current benchmark data.
+const MLPERF = [
+  {workload:"Llama2-70B, Offline", chip:"NVIDIA H100 SXM", tput:3210},
+  {workload:"Llama2-70B, Offline", chip:"NVIDIA B200",     tput:7450},
+  {workload:"Llama2-70B, Offline", chip:"Google TPU v5p",  tput:2890},
+  {workload:"Llama2-70B, Offline", chip:"Google TPU v6e",  tput:4120},
+  {workload:"Llama2-70B, Offline", chip:"AMD MI300X",      tput:2980}
+];
+
+// Cloud on-demand list pricing, USD per chip-hour. Verified against live provider
+// pages on 2026-07-12. GCP TPU rows confirmed directly from cloud.google.com/tpu/pricing.
+// AWS H100: p5.48xlarge is $55.04/hr for 8 GPUs = $6.88/chip-hr.
+// Azure H100: ND96isr H100 v5 is $98.32/hr for 8 GPUs = $12.29/chip-hr.
+// These change — re-verify before citing.
+const PRICING = {
+  "NVIDIA H100 SXM": {gcp:11.06, aws:6.88,  azure:12.29},
+  "Google TPU v5p":  {gcp:4.20,  aws:null,  azure:null},
+  "Google TPU v6e":  {gcp:2.70,  aws:null,  azure:null},
+  "NVIDIA B200":     {gcp:null,  aws:null,  azure:null},
+  "AMD MI300X":      {gcp:null,  aws:null,  azure:null}
+};
+
+// Source: Synergy Research Group public quarterly releases. Last reviewed 2026-07-12.
+const MARKET = {quarter:"Q1 2026", spend_b:129, growth_pct:35, share:{"AWS":28,"Microsoft Azure":21,"Google Cloud":14,"Others":37}};
+
+// ─────────────── TAB 5: COST & PERFORMANCE ───────────────
+function buildCostPerfChart() {
+  const priced = HARDWARE_ECON.filter(h=>h.price)
+    .map(h=>({id:h.id, val:Math.round(h.tflops/(h.price/1000))}))
+    .sort((a,b)=>b.val-a.val);
+  new Chart(document.getElementById('costperf-chart').getContext('2d'), {
+    type:'bar',
+    data:{labels:priced.map(d=>d.id), datasets:[{label:'TFLOP/s per $1,000', data:priced.map(d=>d.val), backgroundColor:'#1f6feb', borderRadius:4}]},
+    options:{responsive:true, maintainAspectRatio:false,
+      scales:{x:{ticks:{color:'#8b949e', maxRotation:45, minRotation:30}, grid:{display:false}},
+              y:{ticks:{color:'#8b949e'}, grid:{color:'#21262d'}, title:{display:true, text:'TFLOP/s per $1,000', color:'#8b949e'}}},
+      plugins:{legend:{display:false}}}
+  });
+}
+
+// ─────────────── TAB 6: MLPERF HEAD-TO-HEAD ───────────────
+let mlperfChart;
+function populateMLPerfSelector() {
+  const sel = document.getElementById('mlperf-workload-select');
+  Array.from(new Set(MLPERF.map(m=>m.workload))).forEach(w=>{
+    const o = document.createElement('option'); o.value = w; o.textContent = w; sel.appendChild(o);
+  });
+}
+function updateMLPerf() {
+  const workload = document.getElementById('mlperf-workload-select').value;
+  const rows = MLPERF.filter(m=>m.workload===workload).sort((a,b)=>b.tput-a.tput);
+  const colorFor = mfr => mfr==='NVIDIA' ? '#1f6feb' : mfr==='Google' ? '#8957e5' : '#d29922';
+  const colors = rows.map(r=>{ const h = HARDWARE_ECON.find(x=>x.id===r.chip); return colorFor(h ? h.mfr : ''); });
+  if (mlperfChart) mlperfChart.destroy();
+  mlperfChart = new Chart(document.getElementById('mlperf-chart').getContext('2d'), {
+    type:'bar',
+    data:{labels:rows.map(r=>r.chip), datasets:[{label:'tokens/sec', data:rows.map(r=>r.tput), backgroundColor:colors, borderRadius:4}]},
+    options:{responsive:true, maintainAspectRatio:false,
+      scales:{x:{ticks:{color:'#8b949e', maxRotation:45, minRotation:30}, grid:{display:false}},
+              y:{ticks:{color:'#8b949e'}, grid:{color:'#21262d'}, title:{display:true, text:'Throughput (tokens/sec)', color:'#8b949e'}}},
+      plugins:{legend:{display:false}}}
+  });
+}
+
+// ─────────────── TAB 7: COST PER 1M TOKENS ───────────────
+let calcChart;
+function populateCalcChip() {
+  const sel = document.getElementById('calc-chip');
+  Object.keys(PRICING).forEach(id=>{ const o=document.createElement('option'); o.value=id; o.textContent=id; sel.appendChild(o); });
+}
+function costPer1M(chipId, cloud, util) {
+  const m = MLPERF.find(x=>x.chip===chipId);
+  const p = (PRICING[chipId]||{})[cloud];
+  if (!m || !p) return null;
+  const tokensPerHour = m.tput * util * 3600;
+  return (p / tokensPerHour) * 1000000;
+}
+function updateCalculator() {
+  const chipId = document.getElementById('calc-chip').value;
+  const cloud  = document.getElementById('calc-cloud').value;
+  const util   = parseFloat(document.getElementById('calc-util').value) / 100;
+  const insight = document.getElementById('calc-insight');
+  const cost = costPer1M(chipId, cloud, util);
+  const m = MLPERF.find(x=>x.chip===chipId);
+  const price = (PRICING[chipId]||{})[cloud];
+
+  if (cost === null) {
+    document.getElementById('calc-cost-value').textContent = 'No data';
+    document.getElementById('calc-throughput-value').textContent = '—';
+    insight.className = 'insight';
+    insight.innerHTML = '<strong>No price on file</strong>No ' + cloud.toUpperCase() +
+      ' list price recorded for ' + chipId + '. Add it to the PRICING object in this file.';
+  } else {
+    document.getElementById('calc-cost-value').textContent = '$' + cost.toFixed(2);
+    document.getElementById('calc-throughput-value').textContent = Math.round(m.tput * util).toLocaleString() + ' tok/s';
+    insight.className = 'insight info';
+    insight.innerHTML = '<strong>' + chipId + '</strong>' + m.tput.toLocaleString() + ' tok/s peak × ' +
+      (util*100).toFixed(0) + '% utilization × $' + price.toFixed(2) + '/chip-hr (' + cloud.toUpperCase() +
+      ' on-demand list price). Utilization is the lever most teams underestimate — halving it doubles cost per token.';
+  }
+
+  const rows = Object.keys(PRICING)
+    .map(id=>({id:id, cost:costPer1M(id, cloud, util)}))
+    .filter(r=>r.cost !== null)
+    .sort((a,b)=>a.cost-b.cost);
+  if (calcChart) calcChart.destroy();
+  calcChart = new Chart(document.getElementById('calc-chart').getContext('2d'), {
+    type:'bar',
+    data:{labels:rows.map(r=>r.id), datasets:[{label:'$ per 1M tokens', data:rows.map(r=>Number(r.cost.toFixed(2))), backgroundColor:'#3fb950', borderRadius:4}]},
+    options:{responsive:true, maintainAspectRatio:false,
+      scales:{x:{ticks:{color:'#8b949e', maxRotation:45, minRotation:30}, grid:{display:false}},
+              y:{ticks:{color:'#8b949e'}, grid:{color:'#21262d'}, title:{display:true, text:'$ per 1M tokens', color:'#8b949e'}}},
+      plugins:{legend:{display:false}}}
+  });
+}
+
+// ─────────────── TAB 8: MARKET CONTEXT ───────────────
+function buildMarketChart() {
+  document.getElementById('market-quarter').textContent = MARKET.quarter;
+  document.getElementById('market-spend').textContent = '$' + MARKET.spend_b + 'B';
+  document.getElementById('market-growth').textContent = MARKET.growth_pct + '%';
+  document.getElementById('market-source').innerHTML = 'Source: Synergy Research Group, ' + MARKET.quarter + ' · last reviewed 2026-07-12';
+  new Chart(document.getElementById('market-chart').getContext('2d'), {
+    type:'doughnut',
+    data:{labels:Object.keys(MARKET.share), datasets:[{data:Object.values(MARKET.share), backgroundColor:['#1f6feb','#3fb950','#d29922','#8b949e'], borderColor:'#161b22', borderWidth:2}]},
+    options:{responsive:true, maintainAspectRatio:false, cutout:'60%',
+      plugins:{legend:{position:'right', labels:{color:'#c9d1d9', boxWidth:12, font:{size:11}}},
+               tooltip:{callbacks:{label:ctx=>ctx.label + ': ' + ctx.parsed + '%'}}}}
+  });
+}
+
+// ─────────────── INIT: TABS 5-8 ───────────────
+buildCostPerfChart();
+populateMLPerfSelector();
+updateMLPerf();
+populateCalcChip();
+updateCalculator();
+buildMarketChart();
+
+</script>
+
+</body>
+</html>
