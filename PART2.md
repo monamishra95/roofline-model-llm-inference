@@ -189,11 +189,13 @@ End-to-end on production traffic traces: **19–41% hardware cost reduction and 
 | Chip       | Peak Compute (BF16) | HBM Bandwidth | Ridge Point   |
 |------------|---------------------|---------------|---------------|
 | H100 SXM5  | 989 TFLOPS          | 3,350 GB/s    | ~295 FLOPs/B  |
-| H200 SXM5  | 1,457 TFLOPS        | 8,000 GB/s    | ~182 FLOPs/B  |
+| H200 SXM5  | 989 TFLOPS          | 4,800 GB/s    | ~206 FLOPs/B  |
 | A100 80GB  | 312 TFLOPS          | 2,000 GB/s    | ~156 FLOPs/B  |
 | TPU v4     | 275 TFLOPS          | 1,200 GB/s    | ~229 FLOPs/B  |
 
-A key counterintuitive result: the **H200 has a lower ridge point than the H100**. Its 8 TB/s bandwidth grew faster than its compute. For memory-bound decode workloads, this means a given batch size reaches a higher fraction of the H200's compute ceiling than it would on an H100. **More total TFLOPS does not automatically mean better decode throughput.** What matters is how close the workload's arithmetic intensity is to the ridge point.
+A key counterintuitive result: the **H200 has a lower ridge point than the H100** — ~206 vs ~295 FLOPs/B — despite being the newer and more expensive part. The reason is sharper than it first appears. The H200 is built on the *same GH100 die* as the H100, so its peak compute is not merely similar but **identical**: 989 TFLOPS dense BF16 on both. What changed is entirely the memory subsystem — 141 GB of HBM3e at 4,800 GB/s, against the H100's 80 GB of HBM3 at 3,350 GB/s. Bandwidth rose 43%; compute did not move at all. Since the ridge point is π/β, holding π fixed while raising β can only pull it down.
+
+For memory-bound decode that is exactly the right trade: a given batch size reaches a higher fraction of the H200's compute ceiling than it would on an H100, and the larger HBM holds more KV cache before sharding is forced. **A newer, pricier chip is not automatically a faster one — and here it isn't a faster one at all in raw math.** What you are buying is bandwidth and capacity. Whether that is worth the premium depends entirely on where your workload's arithmetic intensity sits relative to the ridge point.
 
 **Matching the chip to the phase:**
 

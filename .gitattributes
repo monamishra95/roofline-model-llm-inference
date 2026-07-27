@@ -1,0 +1,23 @@
+# Normalise line endings so Windows checkouts don't show every file as modified.
+# Files are stored LF in the repository and checked out native on each platform.
+* text=auto
+
+# Explicit types (helps git pick sensible diffs)
+*.html  text
+*.css   text
+*.js    text
+*.py    text
+*.md    text
+*.csv   text
+*.json  text
+*.yml   text
+*.yaml  text
+
+# Binary — never touch these
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.pdf   binary
+*.zip   binary
+*.xlsx  binary

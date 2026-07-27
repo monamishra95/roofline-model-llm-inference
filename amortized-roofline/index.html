@@ -137,7 +137,7 @@
         <select id="moe-chip" onchange="updateMoE()">
           <option value="h100" data-tflops="989" data-bw="3350">H100 SXM5</option>
           <option value="tpu_v4" data-tflops="275" data-bw="1200">TPU v4</option>
-          <option value="h200" data-tflops="1457" data-bw="8000">H200</option>
+          <option value="h200" data-tflops="989" data-bw="4800">H200</option>
           <option value="a100" data-tflops="312" data-bw="2000">A100 80GB</option>
         </select>
       </div>
@@ -221,7 +221,7 @@
         <select id="spec-chip" onchange="updateSpec()">
           <option value="h100" data-tflops="989" data-bw="3350">H100 SXM5</option>
           <option value="tpu_v4" data-tflops="275" data-bw="1200">TPU v4</option>
-          <option value="h200" data-tflops="1457" data-bw="8000">H200</option>
+          <option value="h200" data-tflops="989" data-bw="4800">H200</option>
         </select>
       </div>
       <div class="field">
@@ -286,7 +286,7 @@
         <label>Chip</label>
         <select id="disagg-chip" onchange="updateDisagg()">
           <option value="h100" data-tflops="989"  data-bw="3350">H100 SXM5 (generalist)</option>
-          <option value="h200" data-tflops="1457" data-bw="8000">H200 SXM5 (generalist)</option>
+          <option value="h200" data-tflops="989" data-bw="4800">H200 SXM5 (generalist)</option>
           <option value="a100" data-tflops="312"  data-bw="2000">A100 80GB (generalist)</option>
           <option value="tpu_v4" data-tflops="275" data-bw="1200">TPU v4 (generalist)</option>
         </select>
@@ -499,9 +499,14 @@ const MODELS = [
   {name:"DeepSeek R1",    provider:"DeepSeek",  type:"moe",   total:671, active:37,  mmlu:90.8, math:97.3, lcb:65.9,  hbm_gb:1342,notes:"R1 reasoning, 671B MoE"},
 ];
 
+// Dense BF16 tensor-core TFLOPS (not the "with sparsity" figure NVIDIA
+// headlines, which is 2x these) and HBM bandwidth in GB/s.
+// H200 shares the H100's GH100 die, so peak compute is identical at 989
+// TFLOPS; only memory changed (141 GB HBM3e at 4,800 GB/s vs 80 GB HBM3
+// at 3,350). That is why the H200's ridge point is *lower* than the H100's.
 const CHIPS = {
   h100:   {name:"H100 SXM5", tflops:989,  bw:3350},
-  h200:   {name:"H200 SXM5", tflops:1457, bw:8000},
+  h200:   {name:"H200 SXM5", tflops:989,  bw:4800},
   a100:   {name:"A100 80GB", tflops:312,  bw:2000},
   tpu_v4: {name:"TPU v4",    tflops:275,  bw:1200},
 };

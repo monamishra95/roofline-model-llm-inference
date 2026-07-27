@@ -21,7 +21,9 @@ import math
 # ---------------------------------------------------------------------------
 CHIPS = {
     "h100":    {"name": "H100 SXM5",   "tflops": 989,  "bw_gbs": 3350, "hbm_gb": 80},
-    "h200":    {"name": "H200 SXM5",   "tflops": 1457, "bw_gbs": 8000, "hbm_gb": 141},
+    # H200 uses the same GH100 die as the H100, so peak compute is identical;
+    # only the memory subsystem changed (141 GB HBM3e @ 4.8 TB/s).
+    "h200":    {"name": "H200 SXM5",   "tflops": 989,  "bw_gbs": 4800, "hbm_gb": 141},
     "a100":    {"name": "A100 80GB",   "tflops": 312,  "bw_gbs": 2000, "hbm_gb": 80},
     "tpu_v4":  {"name": "TPU v4",      "tflops": 275,  "bw_gbs": 1200, "hbm_gb": 32},
     "tpu_v5e": {"name": "TPU v5e",     "tflops": 197,  "bw_gbs": 819,  "hbm_gb": 16},
