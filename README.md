@@ -262,8 +262,8 @@ python scripts/arithmetic_intensity.py --model 70b --precision bf16 --chip h100 
 |-----|--------------|
 | ① Capability–Efficiency Frontier | 13 open-weight models plotted as active params vs MMLU. MoE models reach frontier capability at a fraction of the active parameter cost of equivalent dense models. |
 | ② MoE Roofline Placement | Where MoE models actually land on the Roofline once expert routing overhead is accounted for. The gap between ideal and real operating point is often significant. |
-| ③ Speculative Decoding Amortizer | How a small draft model raises arithmetic intensity of the large verifier — and by how much. Based on [MoE-SpeQ (arXiv 2511.14102)](https://arxiv.org/abs/2511.14102). |
-| ④ Disaggregated Prefill / Decode | Why prefill and decode cannot be optimally served by the same chip — their arithmetic intensities differ by 100–500×. The hardware co-design case for specialization, based on [SPAD (arXiv 2510.08544)](https://arxiv.org/abs/2510.08544). |
+| ③ Disaggregated Prefill / Decode | Why prefill and decode cannot be optimally served by the same chip — their arithmetic intensities differ by 100–500×. The hardware co-design case for specialization, based on [SPAD (arXiv 2510.08544)](https://arxiv.org/abs/2510.08544). |
+| ④ Cost per 1M Tokens | Throughput × utilization × cloud list price, with a raw performance-per-dollar hardware comparison embedded below it. Where the engineering argument turns into a budget number. |
 
 **→ [Part 2: The Levers](./PART2.md)** — six ways to fix a memory-bound LLM workload: batching, quantization, speculative decoding, KV cache reduction, disaggregated serving, and hardware selection.
 

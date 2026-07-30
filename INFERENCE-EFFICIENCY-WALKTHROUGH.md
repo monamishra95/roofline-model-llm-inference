@@ -63,7 +63,7 @@ Here is the part that surprises people. Autoregressive generation, producing one
 
 Against an H100 ridge point of 295, an intensity of 0.5 means the workload runs at roughly 0.2% of the chip's compute potential. The rest of the MXU sits idle, waiting for the memory bus. This is why a team can double their compute budget and not generate a single token faster. They were never limited by compute in the first place.
 
-Prefill, processing the prompt, works the other way. It's a matrix-matrix multiplication over all prompt tokens at once, with intensity around (batch × sequence_length) divided by bytes_per_parameter. That lands in the hundreds, often above the ridge point. Same model, same chip, compute-bound during prefill and memory-bound during decode. Keep that in mind. Tab 4 is built on it.
+Prefill, processing the prompt, works the other way. It's a matrix-matrix multiplication over all prompt tokens at once, with intensity around (batch × sequence_length) divided by bytes_per_parameter. That lands in the hundreds, often above the ridge point. Same model, same chip, compute-bound during prefill and memory-bound during decode. Keep that in mind. Tab 3 is built on it.
 
 The one idea to carry into every tab below: each technique here moves a workload's point rightward on the roofline, raising its arithmetic intensity, so hardware you already own stops sitting idle.
 
@@ -71,7 +71,9 @@ The one idea to carry into every tab below: each technique here moves a workload
 
 ## The tabs
 
-The eight tabs split into two groups. Tabs 1 through 4 cover the physics, where inference efficiency comes from and what changes it. Tabs 5 through 8 cover the economics, translating that physics into dollars and market context. Presented in order, the argument builds from "here is why your chips are idle" to "here is what that costs, and what to do about it."
+There are four tabs, and they split into two groups. Tabs 1 and 2 cover model and workload selection, where the efficiency headroom comes from before any serving trick is applied. Tab 3 covers a structural serving decision, and Tab 4 turns all of it into a dollar figure. Presented in order, the argument builds from "here is why your chips are idle" to "here is what that costs, and what to do about it."
+
+A short note on scope. This is a curated set of four tabs, not the full list of things worth modeling in inference efficiency. Speculative decoding, live MLPerf benchmarking, and cloud market context are all real levers and real context, and earlier versions of this analyzer covered them. They were cut here to keep the live demo focused on the four arguments with the most direct line to a serving or budget decision. The reasoning behind speculative decoding is still worth knowing even without a dedicated tab: a small draft model proposes several tokens, a large verifier checks them in one batched pass, and that batched pass is matrix-matrix instead of matrix-vector, which raises arithmetic intensity the same way batching does in Tab 2.
 
 ### Tab 1. Capability-Efficiency Frontier
 
@@ -104,25 +106,7 @@ It plots both points on the roofline against the chosen chip's ridge point, and 
 
 **The decision it informs.** If you run MoE models, expert-routing behavior across your real batch distribution is worth measuring. It sets how much of the advertised efficiency you actually get. Techniques like expert-parallel placement and routing-aware batching exist to keep this overhead close to 1x.
 
-### Tab 3. Speculative Decoding Amortizer
-
-**The question:** can decode's arithmetic intensity go up without changing the model?
-
-**From first principles.** Decode is memory-bound (Section 0.5) because it's sequential and matrix-vector. One weight load buys exactly one token. Speculative decoding attacks that ratio directly. A small, cheap draft model proposes γ candidate tokens through fast autoregression. Then the large verifier model checks all γ+1 positions in one forward pass, which, because it processes multiple positions at once, is matrix-matrix, not matrix-vector. One expensive weight load from the verifier now buys several accepted tokens instead of one. Arithmetic intensity rises, and the workload's point on the roofline moves right.
-
-How many tokens does one verifier pass buy on average? With a per-token acceptance rate α and speculation length γ, the expected number of accepted tokens per round is
-
-```
-E = (1 − α^(γ+1)) / (1 − α)
-```
-
-Two things matter here. E rises with both α, a better-matched draft model, and γ, a longer speculative run. And the ceiling engineers most often forget is that at perfect acceptance (α = 1), the gain caps at exactly γ+1. You can't amortize a weight load across more tokens than you speculated. Set γ = 8 and your gain caps at 9x, no matter how good the draft model is.
-
-**How to read it.** Set verifier, draft model, chip, γ, and acceptance rate, and the chart shows the baseline decode point and the amortized point on the same roofline. The gap between them is the speedup. If the amortized point is still left of the ridge, decode is still memory-bound, the gap narrowed but didn't close. If it crosses the ridge, decode is now compute-bound.
-
-**The decision it informs.** Speculative decoding is a serving-side change, no model retraining, that can multiply decode throughput several times over. Its payoff depends entirely on acceptance rate. The tab makes the two knobs, draft-model quality and speculation length, and their interaction visible, so you can tell whether a given draft model is worth building before you build it.
-
-### Tab 4. Disaggregated Prefill / Decode
+### Tab 3. Disaggregated Prefill / Decode
 
 **The question:** if prefill and decode want such different things, why serve them on the same chip?
 
@@ -134,27 +118,7 @@ That's a 100 to 500x mismatch in what the two phases want from silicon, and the 
 
 **The decision it informs.** This is the case for disaggregated serving and hardware co-design. For a team running inference at scale, splitting prefill and decode into separate pools, even separate chip types, is not an exotic optimization. It recovers a 100 to 500x efficiency gap that a generalist deployment leaves on the table by design.
 
-### Tab 5. Cost & Performance
-
-**The question:** setting workloads aside for a moment, what raw compute does a dollar of hardware buy?
-
-**From first principles.** Tabs 1 through 4 were about intensity, using hardware well. This tab steps back to the hardware itself and asks the simpler question, peak FLOP/s per dollar of list price. It plots BF16 TFLOP/s per $1,000 across chips that have a public list price.
-
-**How to read it.** This is a raw metric on purpose. It says nothing about whether your workload can use those FLOP/s, that's what the roofline tabs are for. It's the baseline before utilization, memory bottlenecks, or cloud markups enter the picture, how much theoretical compute the sticker price buys. Chips sold only through cloud rental, all TPUs and Trainium, have no list price and are left out here. They show up in Tab 7, where rental price is the right lens.
-
-**The decision it informs.** A sanity check on procurement conversations. A chip that looks cheap per FLOP can still be a poor buy if your workload is memory-bound on it, meaning low ridge-point utilization, which is exactly why this tab should not be read alone. It sets up the more honest metric in Tab 7.
-
-### Tab 6. Throughput Head-to-Head
-
-**The question:** in practice, how many tokens per second do these chips deliver on a real model?
-
-**From first principles.** Peak FLOP/s (Tab 5) is a ceiling almost no real workload reaches. Measured throughput on a standard benchmark is ground truth. It already accounts for memory bottlenecks, kernel efficiency, and everything the roofline predicts. This tab shows measured Llama2-70B offline throughput per accelerator.
-
-**A note worth stating plainly when you present this.** These figures are labeled illustrative, not current-gen. They cover the H100, B200, TPU, and MI300X generation to stay consistent with the chips used in tabs 1 through 4. They are not drawn from live benchmark submissions. Checking the current MLPerf Inference v6.0 results from April 2026, none of these chips appear. The field has moved to AMD MI355X, NVIDIA B300-SXM, and NVIDIA RTX PRO 6000 Blackwell running at FP4 precision, and Google did not submit at all. Treat this tab as a teaching device for the shape of the comparison, not as current numbers. That's a useful lesson on its own. Benchmark leadership moves fast, and any hard-coded throughput table ages quickly.
-
-**The decision it informs.** It grounds the abstract roofline reasoning in a number people can hold onto, and it feeds Tab 7, where throughput is the denominator in the cost-per-token math.
-
-### Tab 7. Cost per 1M Tokens
+### Tab 4. Cost per 1M Tokens
 
 **The question:** the one finance actually asks. What does it cost to serve a million tokens, and what changes it?
 
@@ -164,23 +128,17 @@ That's a 100 to 500x mismatch in what the two phases want from silicon, and the 
 cost per 1M tokens = price_per_chip_hour / (throughput_tokens_per_sec × utilization × 3,600) × 1,000,000
 ```
 
-Three inputs, each traceable to something earlier. Throughput comes from Tab 6, and from the roofline before that. Price is the cloud provider's on-demand list rate, checked against live provider pages. Utilization is the share of peak throughput actually sustained in production, and it's the lever teams underestimate most consistently.
+Three inputs. Throughput is a measured benchmark figure, not the theoretical peak, so it already reflects the memory bottlenecks the roofline predicts. Price is the cloud provider's on-demand list rate, checked against live provider pages. Utilization is the share of peak throughput actually sustained in production, and it's the lever teams underestimate most consistently.
 
-**How to read it.** Move the utilization slider and watch cost shift. Because utilization sits in the denominator, halving it doubles cost per token. A team running at 30% utilization pays more than three times what the same hardware costs a team running at 90%. The comparison chart ranks chips by cost per token on the same cloud at the same utilization, and it often reorders the "cheapest chip" ranking from Tab 5's raw sticker view, because a chip with mediocre FLOP/s per dollar but strong real throughput can win on cost per token.
+**How to read it.** Move the utilization slider and watch cost shift. Because utilization sits in the denominator, halving it doubles cost per token. A team running at 30% utilization pays more than three times what the same hardware costs a team running at 90%. The comparison chart ranks chips by cost per token on the same cloud at the same utilization, and a chip with mediocre FLOP/s per dollar but strong real throughput can win here even if it doesn't win on the raw hardware comparison below it.
 
 **A correctness note worth mentioning when presenting.** Checking the cloud prices live caught a real error. An AWS H100 rate had been entered at roughly double the true figure, $6.88 per chip-hour, from a p5.48xlarge at $55.04 per hour across 8 GPUs. Small input errors in this formula flow straight to the bottom line. That's why the tab shows its price assumptions instead of hiding them.
 
-**The decision it informs.** This is the tab for a budget conversation. Every intensity gain from tabs 1 through 4 shows up here as lower cost per token, and it makes the case that raising utilization is often the cheapest saving available, since it requires no new hardware.
+The throughput figures behind this tab are labeled illustrative, not current-gen. They cover the H100, B200, TPU, and MI300X generation, kept consistent with the chip set used in tabs 1 through 3, and are not drawn from live benchmark submissions. Checking the current MLPerf Inference v6.0 results from April 2026, none of these chips appear, the field has moved to AMD MI355X, NVIDIA B300-SXM, and NVIDIA RTX PRO 6000 Blackwell at FP4 precision, and Google did not submit at all. Treat the throughput inputs as a teaching device for the shape of the calculation, not as citable current numbers.
 
-### Tab 8. Market Context
+**Below the calculator, a second section: Performance per Dollar.** This is the raw hardware baseline, peak FLOP/s per $1,000 of list price, before any workload, utilization, or cloud rental pricing enters the picture. It plots BF16 TFLOP/s per $1,000 across chips that have a public list price. Chips sold only through cloud rental, all TPUs and Trainium, have no list price and are left out. Read this section as a sanity check, not the final word. A chip that looks cheap per FLOP can still be a poor buy if your workload is memory-bound on it, meaning low ridge-point utilization, which is exactly why the cost-per-token number above it is the more decision-relevant metric.
 
-**The question:** what's the commercial backdrop this sits inside?
-
-**From first principles.** The first seven tabs are about making your own inference cheaper. This one zooms out to the market that prices the hardware and rents the capacity. It shows quarterly cloud infrastructure spend, year-over-year growth, and the share split across major providers, from Synergy Research.
-
-**How to read it.** Treat it as framing, not as a lever you can pull. The relevant story for an efficiency audience is the growth rate and its direction. Cloud infrastructure spend is large and growing, which is what makes per-token efficiency a real financial concern rather than a rounding error. When the underlying spend grows double digits a year, a 30% efficiency gain is a large absolute number.
-
-**The decision it informs.** It's the "why this matters" context, useful at the start or end of a presentation, connecting the microarchitecture physics of tabs 1 through 4 to the spend that makes the work worth doing.
+**The decision it informs.** This is the tab for a budget conversation. Every intensity gain from tabs 1 through 3 shows up here as lower cost per token, and it makes the case that raising utilization is often the cheapest saving available, since it requires no new hardware.
 
 ---
 
@@ -188,13 +146,13 @@ Three inputs, each traceable to something earlier. Throughput comes from Tab 6, 
 
 Presented in sequence, the tabs form one argument.
 
-The problem, from the roofline in Part 0, is that inference chips sit mostly idle during decode, because decode is memory-bound, and extra compute doesn't fix a memory bottleneck. The first lever, Tab 1, is choosing the right model. A well-designed MoE gives frontier quality at a fraction of the per-token memory cost. The catch, Tab 2, is that real batching erodes that advantage through expert-loading overhead, so routing behavior needs managing. The serving-side multiplier, Tab 3, is speculative decoding, which raises decode intensity without touching the model, bounded by acceptance rate and speculation length. The structural fix, Tab 4, is that prefill and decode want opposite hardware, so serving them separately recovers a 100 to 500x mismatch and 19 to 41% of total cost of ownership. Then the economics. Raw compute per dollar in Tab 5. Real measured throughput in Tab 6. The cost-per-token metric that ties physics to budget and exposes utilization as the cheapest lever, in Tab 7. And the market backdrop that makes all of it worth doing, in Tab 8.
+The problem, from the roofline in Part 0, is that inference chips sit mostly idle during decode, because decode is memory-bound, and extra compute doesn't fix a memory bottleneck. The first lever, Tab 1, is choosing the right model. A well-designed MoE gives frontier quality at a fraction of the per-token memory cost. The catch, Tab 2, is that real batching erodes that advantage through expert-loading overhead, so routing behavior needs managing. The structural fix, Tab 3, is that prefill and decode want opposite hardware, so serving them separately recovers a 100 to 500x mismatch and 19 to 41% of total cost of ownership. Then the economics, Tab 4, the cost-per-token metric that ties all of the above to a budget number and exposes utilization as the cheapest lever, with the raw hardware-cost baseline sitting underneath it for context.
 
 ## What this tool does not model
 
 Worth stating up front, since it heads off the sharpest questions.
 
-The roofline gives theoretical ceilings. Real kernels never hit them exactly, so treat every attainable-performance figure as an upper bound. The intensity formulas are first-order. They capture the dominant weight-loading term and leave out KV-cache growth, attention's own memory traffic, and communication overhead across sharded chips, all of which matter at long context and large scale. The throughput numbers in tabs 6 and 7 reflect an older chip generation, not current benchmark data. And the whole framework is about decode-time, memory-bound inference. It says little about training, which is a different, more compute-bound regime. None of this undercuts the core argument. It just marks where the argument's edges are, which is usually where the interesting engineering work is.
+The roofline gives theoretical ceilings. Real kernels never hit them exactly, so treat every attainable-performance figure as an upper bound. The intensity formulas are first-order. They capture the dominant weight-loading term and leave out KV-cache growth, attention's own memory traffic, and communication overhead across sharded chips, all of which matter at long context and large scale. The throughput numbers behind Tab 4 reflect an older chip generation, not current benchmark data. Speculative decoding, live MLPerf submissions, and cloud market spend are real and relevant but live outside this four-tab cut, not because they don't matter, but because they didn't have the most direct line to a serving or budget decision. And the whole framework is about decode-time, memory-bound inference. It says little about training, which is a different, more compute-bound regime. None of this undercuts the core argument. It just marks where the argument's edges are, which is usually where the interesting engineering work is.
 
 ---
 

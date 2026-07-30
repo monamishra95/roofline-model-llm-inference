@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Amortized Roofline — MoE & Speculative Decoding Analyzer</title>
+  <title>Amortized Roofline — Inference Efficiency Analyzer</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
@@ -80,9 +80,9 @@
 <body>
 
 <h1>Amortized Roofline Analyzer</h1>
-<p class="byline">By <a href="../README.md">Mona Mishra</a> · Extension of the Roofline Model for MoE & Speculative Decoding Workloads</p>
+<p class="byline">By <a href="../README.md">Mona Mishra</a> · Extension of the Roofline Model for MoE Workloads & Inference Cost Economics</p>
 <div class="thesis">
-  <strong>The key insight from recent research:</strong> The standard Roofline Model assumes dense, sequential token generation. Modern workloads break this assumption in two important ways — (1) <strong>Mixture-of-Experts (MoE)</strong> activates only a fraction of parameters per token, reshaping the memory access pattern; (2) <strong>Speculative Decoding</strong> amortizes the cost of the large verifier model across multiple verified tokens, raising effective arithmetic intensity. This tool makes both effects visible on the Roofline chart.
+  <strong>The key insight from recent research:</strong> The standard Roofline Model assumes dense, sequential token generation. This tool extends it in ways that matter for real serving decisions — (1) <strong>Mixture-of-Experts (MoE)</strong> activates only a fraction of parameters per token, reshaping the memory access pattern and the model-selection tradeoff; (2) prefill and decode have arithmetic intensities that differ by 100–500×, which is the argument for <strong>disaggregated serving</strong> on specialized hardware; (3) every efficiency gain above shows up directly in <strong>cost per token</strong>, where the engineering argument becomes a budget argument.
   <br><br>
   Based on: <a href="https://arxiv.org/abs/2511.14102" style="color:#58a6ff" target="_blank">MoE-SpeQ (arXiv 2511.14102)</a> · <a href="https://arxiv.org/abs/2510.08544" style="color:#58a6ff" target="_blank">SPAD (arXiv 2510.08544)</a> · <a href="https://arxiv.org/html/2507.14397v1" style="color:#58a6ff" target="_blank">LLM Inference Limits (arXiv 2507)</a>
 </div>
@@ -91,12 +91,8 @@
 <div class="tabs">
   <button class="tab active" onclick="switchTab('frontier')">① Capability–Efficiency Frontier</button>
   <button class="tab" onclick="switchTab('moe')">② MoE Roofline Placement</button>
-  <button class="tab" onclick="switchTab('speculative')">③ Speculative Decoding Amortizer</button>
-  <button class="tab" onclick="switchTab('disagg')">④ Disaggregated Prefill / Decode</button>
-  <button class="tab" onclick="switchTab('costperf')">⑤ Cost &amp; Performance</button>
-  <button class="tab" onclick="switchTab('mlperf')">⑥ Throughput Head-to-Head</button>
-  <button class="tab" onclick="switchTab('calculator')">⑦ Cost per 1M Tokens</button>
-  <button class="tab" onclick="switchTab('market')">⑧ Market Context</button>
+  <button class="tab" onclick="switchTab('disagg')">③ Disaggregated Prefill / Decode</button>
+  <button class="tab" onclick="switchTab('calculator')">④ Cost per 1M Tokens</button>
 </div>
 
 <!-- ─────────────────────────────────────────────
@@ -188,82 +184,7 @@
 </div>
 
 <!-- ─────────────────────────────────────────────
-     TAB 3: Speculative Decoding Amortizer
-───────────────────────────────────────────── -->
-<div id="tab-speculative" class="section">
-  <div class="section-title">Speculative Decoding — Amortized Roofline</div>
-  <div class="section-sub">
-    Speculative decoding uses a small draft model to propose γ tokens, then a large verifier validates them in parallel. The verifier's forward pass over γ tokens is matrix-matrix (not matrix-vector) — increasing arithmetic intensity. This "amortization" moves the operating point rightward on the Roofline. Based on the Amortization Roofline Model from <a href="https://arxiv.org/abs/2511.14102" target="_blank" style="color:#58a6ff">MoE-SpeQ (2025)</a>.
-  </div>
-  <div class="two-col">
-    <div class="panel">
-      <div class="panel-title">Configuration</div>
-      <div class="field">
-        <label>Verifier Model (large)</label>
-        <select id="spec-verifier" onchange="updateSpec()">
-          <option value="70">Llama 3.1 70B</option>
-          <option value="405">Llama 3.1 405B</option>
-          <option value="72">Qwen2.5-72B</option>
-          <option value="37">DeepSeek-V3 (37B active)</option>
-        </select>
-      </div>
-      <div class="field">
-        <label>Draft Model (small)</label>
-        <select id="spec-draft" onchange="updateSpec()">
-          <option value="1">Llama 3.2 1B</option>
-          <option value="3">Llama 3.2 3B</option>
-          <option value="7">Llama 3.1 8B</option>
-          <option value="14">Phi-4 14B</option>
-        </select>
-      </div>
-      <div class="field">
-        <label>Chip</label>
-        <select id="spec-chip" onchange="updateSpec()">
-          <option value="h100" data-tflops="989" data-bw="3350">H100 SXM5</option>
-          <option value="tpu_v4" data-tflops="275" data-bw="1200">TPU v4</option>
-          <option value="h200" data-tflops="989" data-bw="4800">H200</option>
-        </select>
-      </div>
-      <div class="field">
-        <label>Speculation Length (γ): <span id="spec-gamma-label">4</span> tokens</label>
-        <input type="range" id="spec-gamma" min="1" max="16" value="4" oninput="document.getElementById('spec-gamma-label').textContent=this.value;updateSpec()">
-        <div class="range-row"><span>1</span><span>16</span></div>
-      </div>
-      <div class="field">
-        <label>Acceptance Rate (α): <span id="spec-alpha-label">70</span>%</label>
-        <input type="range" id="spec-alpha" min="10" max="100" value="70" oninput="document.getElementById('spec-alpha-label').textContent=this.value;updateSpec()">
-        <div class="range-row"><span>10%</span><span>100%</span></div>
-      </div>
-
-      <div class="result-grid">
-        <div class="result-card">
-          <div class="result-label">Baseline AI (decode)</div>
-          <div class="result-value" id="spec-baseline-ai">—</div>
-        </div>
-        <div class="result-card">
-          <div class="result-label">Amortized AI</div>
-          <div class="result-value green" id="spec-amortized-ai">—</div>
-        </div>
-        <div class="result-card">
-          <div class="result-label">AI Gain</div>
-          <div class="result-value green" id="spec-gain">—</div>
-        </div>
-        <div class="result-card">
-          <div class="result-label">Tokens/Round</div>
-          <div class="result-value" id="spec-tokens-round">—</div>
-        </div>
-      </div>
-      <div class="insight info" id="spec-insight"></div>
-    </div>
-    <div class="panel">
-      <div class="panel-title">Roofline — Baseline vs Amortized Operating Point</div>
-      <div class="chart-wrap"><canvas id="spec-chart"></canvas></div>
-    </div>
-  </div>
-</div>
-
-<!-- ─────────────────────────────────────────────
-     TAB 4: Disaggregated Prefill / Decode
+     TAB 3: Disaggregated Prefill / Decode
 ───────────────────────────────────────────── -->
 <div id="tab-disagg" class="section">
   <div class="section-title">Disaggregated Prefill / Decode — The Case for Specialized Hardware</div>
@@ -359,8 +280,8 @@
       <div style="font-size:.82rem;color:#c9d1d9;line-height:1.6">Dense decode at batch=1 runs at ~0.2% MXU utilization. Adding more TFLOPS does not help. The hardware roadmap question is: how do we move the workload rightward on the Roofline — through batching, quantization, or architecture changes — not: how do we add more raw compute?</div>
     </div>
     <div class="panel">
-      <div style="font-size:.8rem;font-weight:700;color:#58a6ff;margin-bottom:.5rem">② MoE and speculative decoding are architectural responses to a hardware constraint</div>
-      <div style="font-size:.82rem;color:#c9d1d9;line-height:1.6">MoE reduces active parameters per token, shrinking the bytes-per-token load. Speculative decoding converts sequential matrix-vector ops into a batched matrix-matrix op. Both are software strategies that raise arithmetic intensity — effectively making the workload a better fit for existing silicon.</div>
+      <div style="font-size:.8rem;font-weight:700;color:#58a6ff;margin-bottom:.5rem">② MoE is an architectural response to a hardware constraint</div>
+      <div style="font-size:.82rem;color:#c9d1d9;line-height:1.6">MoE reduces active parameters per token, shrinking the bytes-per-token load — the direct lever the model-selection tab above is built around. It is a model-architecture strategy that raises arithmetic intensity, making the workload a better fit for existing silicon without new hardware.</div>
     </div>
     <div class="panel">
       <div style="font-size:.8rem;font-weight:700;color:#58a6ff;margin-bottom:.5rem">③ The next hardware frontier is co-design, not scale</div>
@@ -372,45 +293,12 @@
 
 
 <!-- ─────────────────────────────────────────────
-     TAB 5: Cost & Performance Trends
-───────────────────────────────────────────── -->
-<div id="tab-costperf" class="section">
-  <div class="section-title">Performance per Dollar</div>
-  <div class="section-sub">
-    Peak FP16 TFLOP/s per $1,000 of list price, across the same chip set used in the Roofline tabs above.
-    Chips sold only through cloud rental (all TPUs, Trainium) have no public list price and are excluded here — see the cost-per-token tab for those.
-  </div>
-  <div class="panel">
-    <div class="chart-wrap-tall"><canvas id="costperf-chart"></canvas></div>
-    <p class="source-note">Hardware specs adapted from <a href="https://epoch.ai/data/machine-learning-hardware" target="_blank">Epoch AI</a> (CC-BY 4.0)</p>
-  </div>
-</div>
-
-<!-- ─────────────────────────────────────────────
-     TAB 6: MLPerf Head-to-Head
-───────────────────────────────────────────── -->
-<div id="tab-mlperf" class="section">
-  <div class="section-title">Inference Throughput by Chip</div>
-  <div class="section-sub">
-    <strong style="color:#d29922">Illustrative, not current-gen.</strong> These figures cover H100 / B200 / TPU v5p / TPU v6e / MI300X — the same older-generation chip set as tabs ①–④, kept deliberately so the whole page tells one consistent story. They are <em>not</em> drawn from live MLPerf submissions: none of these chips appear in the actual
-    <a href="https://mlcommons.org/2026/04/mlperf-inference-v6-0-results/" target="_blank" style="color:#58a6ff">MLPerf Inference v6.0 results</a> (April 2026), where the field has moved to AMD MI355X, NVIDIA B300-SXM and NVIDIA RTX PRO 6000 Blackwell running at FP4, and Google did not submit at all. Treat what follows as directionally useful for learning the framework, not as citable benchmark data.
-  </div>
-  <div class="panel">
-    <div class="field" style="max-width:280px">
-      <label>Workload</label>
-      <select id="mlperf-workload-select" onchange="updateMLPerf()"></select>
-    </div>
-    <div class="chart-wrap"><canvas id="mlperf-chart"></canvas></div>
-  </div>
-</div>
-
-<!-- ─────────────────────────────────────────────
-     TAB 7: Cost per 1M Tokens
+     TAB 4: Cost per 1M Tokens (+ Performance per Dollar)
 ───────────────────────────────────────────── -->
 <div id="tab-calculator" class="section">
   <div class="section-title">Effective Cost per 1M Tokens</div>
   <div class="section-sub">
-    Throughput × utilization × cloud list price. Cloud pricing was verified against live provider pages on 2026-07-12; throughput inherits the same <strong style="color:#d29922">illustrative, not current-gen</strong> caveat as the tab above.
+    Throughput × utilization × cloud list price. Cloud pricing was verified against live provider pages on 2026-07-12; throughput is an illustrative, not current-gen, benchmark figure — see the note below the raw hardware comparison.
   </div>
   <div class="two-col">
     <div class="panel">
@@ -449,33 +337,17 @@
       <div class="chart-wrap"><canvas id="calc-chart"></canvas></div>
     </div>
   </div>
-</div>
 
-<!-- ─────────────────────────────────────────────
-     TAB 8: Market Context
-───────────────────────────────────────────── -->
-<div id="tab-market" class="section">
-  <div class="section-title">Cloud Market Context</div>
-  <div class="section-sub">
-    The commercial backdrop to everything above: who is buying this compute, and how fast that spend is growing.
-  </div>
-  <div class="result-grid" style="grid-template-columns:repeat(3,1fr)">
-    <div class="result-card">
-      <div class="result-label">Quarter</div>
-      <div class="result-value" id="market-quarter">—</div>
+  <!-- Embedded: Performance per Dollar (raw hardware, formerly its own tab) -->
+  <div style="margin-top:1.5rem;padding-top:1.5rem;border-top:1px solid #30363d">
+    <div class="section-title" style="font-size:.95rem">Performance per Dollar — the raw hardware baseline</div>
+    <div class="section-sub">
+      Peak FP16 TFLOP/s per $1,000 of list price, across chips with a public list price. This is the sticker-price ceiling, before utilization or cloud rental pricing enter the picture — it explains why a chip can look cheap here and still cost more per token above. Chips sold only through cloud rental (TPUs, Trainium) have no public list price and are excluded.
     </div>
-    <div class="result-card">
-      <div class="result-label">Cloud Infra Spend</div>
-      <div class="result-value" id="market-spend">—</div>
+    <div class="panel">
+      <div class="chart-wrap-tall"><canvas id="costperf-chart"></canvas></div>
+      <p class="source-note">Hardware specs adapted from <a href="https://epoch.ai/data/machine-learning-hardware" target="_blank">Epoch AI</a> (CC-BY 4.0). Throughput figures above are <strong style="color:#d29922">illustrative, not current-gen</strong> — kept as the same older chip set as the rest of this page; see <a href="https://mlcommons.org/2026/04/mlperf-inference-v6-0-results/" target="_blank" style="color:#58a6ff">MLPerf Inference v6.0</a> for current results.</p>
     </div>
-    <div class="result-card">
-      <div class="result-label">YoY Growth</div>
-      <div class="result-value green" id="market-growth">—</div>
-    </div>
-  </div>
-  <div class="panel">
-    <div class="chart-wrap"><canvas id="market-chart"></canvas></div>
-    <p class="source-note" id="market-source"></p>
   </div>
 </div>
 
@@ -515,7 +387,7 @@ const CHIPS = {
 function switchTab(name) {
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
-  const idx = ['frontier','moe','speculative','disagg','costperf','mlperf','calculator','market'].indexOf(name);
+  const idx = ['frontier','moe','disagg','calculator'].indexOf(name);
   document.querySelectorAll('.tab')[idx].classList.add('active');
   document.getElementById('tab-'+name).classList.add('active');
 }
@@ -716,71 +588,7 @@ function updateMoE() {
   moeChart.update();
 }
 
-// ─────────────── TAB 3: SPECULATIVE DECODING ───────────────
-let specChart;
-function buildSpecChart() {
-  specChart = new Chart(document.getElementById('spec-chart').getContext('2d'), {
-    type: 'line',
-    data: { datasets: [] },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      animation: { duration: 200 },
-      scales: {
-        x: { type: 'logarithmic', title: { display: true, text: 'Arithmetic Intensity (FLOPs/Byte)', color: '#8b949e' }, grid: { color: '#21262d' }, ticks: { color: '#8b949e' }, min: 0.1, max: 1000 },
-        y: { type: 'logarithmic', title: { display: true, text: 'Performance (TFLOPS/s)', color: '#8b949e' }, grid: { color: '#21262d' }, ticks: { color: '#8b949e' } }
-      },
-      plugins: {
-        legend: { labels: { color: '#c9d1d9', boxWidth: 12, font: { size: 11 } } },
-        tooltip: { callbacks: { label: ctx => ctx.dataset.label + ': ' + (typeof ctx.parsed.y === 'number' ? ctx.parsed.y.toFixed(1) + ' TFLOPS/s' : '') } }
-      }
-    }
-  });
-}
-
-function updateSpec() {
-  const chip = chipFromSelect('spec-chip');
-  const gamma = parseFloat(document.getElementById('spec-gamma').value);
-  const alpha = parseFloat(document.getElementById('spec-alpha').value) / 100;
-  const bpp = 2; // BF16
-
-  const ridge = ridgePoint(chip.tflops, chip.bw);
-  // Baseline: autoregressive decode at batch 1 is a matrix-vector op.
-  const baselineAI = 1 / bpp;
-  // Expected tokens accepted per verification round (standard speculative decoding):
-  //   E = (1 - alpha^(gamma+1)) / (1 - alpha), which tends to gamma+1 as alpha -> 1.
-  const E = alpha >= 1 ? (gamma + 1) : (1 - Math.pow(alpha, gamma + 1)) / (1 - alpha);
-  // The verifier's pass covers those tokens at once, so intensity scales with E.
-  const amortAI = E / bpp;
-  const gain = amortAI / baselineAI;
-
-  const basePerf = attainable(chip.tflops, chip.bw, baselineAI);
-  const amortPerf = attainable(chip.tflops, chip.bw, amortAI);
-
-  document.getElementById('spec-baseline-ai').textContent = baselineAI.toFixed(2);
-  document.getElementById('spec-amortized-ai').textContent = amortAI.toFixed(2);
-  document.getElementById('spec-gain').textContent = gain.toFixed(2) + '×';
-  document.getElementById('spec-tokens-round').textContent = E.toFixed(2);
-
-  const insight = document.getElementById('spec-insight');
-  insight.className = 'insight info';
-  insight.innerHTML = '<strong>' + gain.toFixed(2) + '× intensity gain</strong>' +
-    'At γ=' + gamma + ' with ' + (alpha * 100).toFixed(0) + '% acceptance, the verifier clears ' + E.toFixed(2) +
-    ' tokens per round, lifting intensity from ' + baselineAI.toFixed(2) + ' to ' + amortAI.toFixed(2) +
-    ' FLOPs/Byte. Ridge point is ' + ridge.toFixed(1) + ', so the workload is still ' +
-    (amortAI < ridge ? 'memory bound — amortization narrows the gap but does not close it' : 'now compute bound') +
-    '. Note the ceiling: even at 100% acceptance the gain caps at γ+1 = ' + (gamma + 1) + '×.';
-
-  specChart.data.datasets = [
-    { label: 'Roofline (' + chip.name + ')', data: rooflineCurve(chip.tflops, chip.bw), borderColor: '#58a6ff', backgroundColor: 'transparent', borderWidth: 2.5, pointRadius: 0, tension: 0 },
-    { label: 'Baseline decode', data: [{ x: baselineAI, y: basePerf }], borderColor: '#f85149', backgroundColor: '#f85149', pointRadius: 8, pointHoverRadius: 10, showLine: false },
-    { label: 'Amortized (speculative)', data: [{ x: amortAI, y: amortPerf }], borderColor: '#3fb950', backgroundColor: '#3fb950', pointRadius: 9, pointHoverRadius: 11, showLine: false }
-  ];
-  specChart.options.scales.y.min = Math.max(0.1, chip.bw * 0.05);
-  specChart.options.scales.y.max = chip.tflops * 2;
-  specChart.update();
-}
-
-// ─────────────── TAB 4: DISAGGREGATED PREFILL / DECODE ───────────────
+// ─────────────── TAB 3: DISAGGREGATED PREFILL / DECODE ───────────────
 let disaggChart;
 function buildDisaggChart() {
   disaggChart = new Chart(document.getElementById('disagg-chart').getContext('2d'), {
@@ -843,19 +651,17 @@ function updateDisagg() {
   disaggChart.update();
 }
 
-// ─────────────── INIT: TABS 1-4 ───────────────
+// ─────────────── INIT: TABS 1-3 ───────────────
 buildFrontierChart();
 buildModelTable();
 buildMoEChart();
 populateMoESelector();
 updateMoE();
-buildSpecChart();
-updateSpec();
 buildDisaggChart();
 updateDisagg();
 
 // ═══════════════════════════════════════════════
-//  TABS 5-8: COST, BENCHMARKS, CALCULATOR, MARKET
+//  TAB 4: COST PER 1M TOKENS + PERFORMANCE PER DOLLAR
 // ═══════════════════════════════════════════════
 
 // Hardware specs, approximate. Live-fetch version of this data (from Epoch AI's
@@ -903,10 +709,7 @@ const PRICING = {
   "AMD MI300X":      {gcp:null,  aws:null,  azure:null}
 };
 
-// Source: Synergy Research Group public quarterly releases. Last reviewed 2026-07-12.
-const MARKET = {quarter:"Q1 2026", spend_b:129, growth_pct:35, share:{"AWS":28,"Microsoft Azure":21,"Google Cloud":14,"Others":37}};
-
-// ─────────────── TAB 5: COST & PERFORMANCE ───────────────
+// ─────────────── PERFORMANCE PER DOLLAR (embedded in Tab 4) ───────────────
 function buildCostPerfChart() {
   const priced = HARDWARE_ECON.filter(h=>h.price)
     .map(h=>({id:h.id, val:Math.round(h.tflops/(h.price/1000))}))
@@ -921,31 +724,7 @@ function buildCostPerfChart() {
   });
 }
 
-// ─────────────── TAB 6: MLPERF HEAD-TO-HEAD ───────────────
-let mlperfChart;
-function populateMLPerfSelector() {
-  const sel = document.getElementById('mlperf-workload-select');
-  Array.from(new Set(MLPERF.map(m=>m.workload))).forEach(w=>{
-    const o = document.createElement('option'); o.value = w; o.textContent = w; sel.appendChild(o);
-  });
-}
-function updateMLPerf() {
-  const workload = document.getElementById('mlperf-workload-select').value;
-  const rows = MLPERF.filter(m=>m.workload===workload).sort((a,b)=>b.tput-a.tput);
-  const colorFor = mfr => mfr==='NVIDIA' ? '#1f6feb' : mfr==='Google' ? '#8957e5' : '#d29922';
-  const colors = rows.map(r=>{ const h = HARDWARE_ECON.find(x=>x.id===r.chip); return colorFor(h ? h.mfr : ''); });
-  if (mlperfChart) mlperfChart.destroy();
-  mlperfChart = new Chart(document.getElementById('mlperf-chart').getContext('2d'), {
-    type:'bar',
-    data:{labels:rows.map(r=>r.chip), datasets:[{label:'tokens/sec', data:rows.map(r=>r.tput), backgroundColor:colors, borderRadius:4}]},
-    options:{responsive:true, maintainAspectRatio:false,
-      scales:{x:{ticks:{color:'#8b949e', maxRotation:45, minRotation:30}, grid:{display:false}},
-              y:{ticks:{color:'#8b949e'}, grid:{color:'#21262d'}, title:{display:true, text:'Throughput (tokens/sec)', color:'#8b949e'}}},
-      plugins:{legend:{display:false}}}
-  });
-}
-
-// ─────────────── TAB 7: COST PER 1M TOKENS ───────────────
+// ─────────────── COST PER 1M TOKENS ───────────────
 let calcChart;
 function populateCalcChip() {
   const sel = document.getElementById('calc-chip');
@@ -997,28 +776,10 @@ function updateCalculator() {
   });
 }
 
-// ─────────────── TAB 8: MARKET CONTEXT ───────────────
-function buildMarketChart() {
-  document.getElementById('market-quarter').textContent = MARKET.quarter;
-  document.getElementById('market-spend').textContent = '$' + MARKET.spend_b + 'B';
-  document.getElementById('market-growth').textContent = MARKET.growth_pct + '%';
-  document.getElementById('market-source').innerHTML = 'Source: Synergy Research Group, ' + MARKET.quarter + ' · last reviewed 2026-07-12';
-  new Chart(document.getElementById('market-chart').getContext('2d'), {
-    type:'doughnut',
-    data:{labels:Object.keys(MARKET.share), datasets:[{data:Object.values(MARKET.share), backgroundColor:['#1f6feb','#3fb950','#d29922','#8b949e'], borderColor:'#161b22', borderWidth:2}]},
-    options:{responsive:true, maintainAspectRatio:false, cutout:'60%',
-      plugins:{legend:{position:'right', labels:{color:'#c9d1d9', boxWidth:12, font:{size:11}}},
-               tooltip:{callbacks:{label:ctx=>ctx.label + ': ' + ctx.parsed + '%'}}}}
-  });
-}
-
-// ─────────────── INIT: TABS 5-8 ───────────────
+// ─────────────── INIT: TAB 4 ───────────────
 buildCostPerfChart();
-populateMLPerfSelector();
-updateMLPerf();
 populateCalcChip();
 updateCalculator();
-buildMarketChart();
 
 </script>
 

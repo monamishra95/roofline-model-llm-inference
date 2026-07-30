@@ -110,7 +110,7 @@ Where Nv = verifier params, Nd = draft params, γ = speculation length, bpp = by
 
 **The catch:** A draft model must exist with a distribution close to the target model's, or acceptance rates collapse. Fine-tuned smaller versions, model-embedded draft heads, or n-gram-based drafters each make different quality/cost tradeoffs.
 
-→ *Explore this interactively: [Speculative Decoding Amortizer](https://monamishra95.github.io/roofline-model-llm-inference/amortized-roofline/) — Tab ③.*
+*Not currently one of the four live tabs in the [Amortized Roofline Analyzer](https://monamishra95.github.io/roofline-model-llm-inference/amortized-roofline/) — the math above stands on its own, and this lever was cut from the live demo to keep it focused on model selection, disaggregated serving, and cost.*
 
 ---
 
@@ -176,7 +176,7 @@ End-to-end on production traffic traces: **19–41% hardware cost reduction and 
 
 > *Source: SPAD (arXiv 2510.08544, 2025) — "Specialized Prefill and Decode hardware."*
 
-→ *Explore this interactively: [Disaggregated Prefill / Decode](https://monamishra95.github.io/roofline-model-llm-inference/amortized-roofline/) — Tab ④.*
+→ *Explore this interactively: [Disaggregated Prefill / Decode](https://monamishra95.github.io/roofline-model-llm-inference/amortized-roofline/) — Tab ③.*
 
 ---
 
