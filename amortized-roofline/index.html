@@ -58,8 +58,8 @@
     .insight.info{background:#1a2235;border:1px solid #58a6ff30}
 
     /* Chart */
-    .chart-wrap{position:relative;height:380px}
-    .chart-wrap-tall{position:relative;height:420px}
+    .chart-wrap{position:relative;height:440px}
+    .chart-wrap-tall{position:relative;height:470px}
 
     /* Model table */
     .model-table{width:100%;border-collapse:collapse;font-size:.82rem;margin-top:.5rem}
@@ -383,6 +383,49 @@ const CHIPS = {
   tpu_v4: {name:"TPU v4",    tflops:275,  bw:1200},
 };
 
+// ─────────────── CHART TYPOGRAPHY ───────────────
+// Cosmetic only. Baseline sizes for every chart on the page; individual charts
+// override where they need something different. Raised from the Chart.js
+// defaults (12 / 12) so the page stays legible on a shared screen.
+Chart.defaults.font.size = 13;
+Chart.defaults.font.family = "-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif";
+Chart.defaults.color = '#c9d1d9';
+Chart.defaults.plugins.legend.labels.padding = 14;
+Chart.defaults.plugins.tooltip.titleFont = { size: 14, weight: '600' };
+Chart.defaults.plugins.tooltip.bodyFont = { size: 13 };
+Chart.defaults.plugins.tooltip.padding = 10;
+
+// Shared axis styling helpers, so the five charts stay consistent.
+const AXIS_TITLE = { size: 14, weight: '600' };
+const AXIS_TICK = { size: 13 };
+const LEGEND_LABELS = { color: '#c9d1d9', boxWidth: 14, padding: 14, font: { size: 14 } };
+
+// Prints each bar's value above it, so the Tab 4 charts can be read without
+// tracing gridlines. Registered per-chart, not globally.
+const barValueLabels = {
+  id: 'barValueLabels',
+  afterDatasetsDraw(chart) {
+    const ctx = chart.ctx;
+    const isMoney = chart.canvas.id === 'calc-chart';
+    ctx.save();
+    ctx.font = "600 13px -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif";
+    ctx.fillStyle = '#e6edf3';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    chart.data.datasets.forEach((ds, i) => {
+      const meta = chart.getDatasetMeta(i);
+      if (!meta || meta.hidden) return;
+      meta.data.forEach((bar, j) => {
+        const v = ds.data[j];
+        if (v === null || v === undefined) return;
+        const text = isMoney ? '$' + Number(v).toFixed(2) : Number(v).toLocaleString();
+        ctx.fillText(text, bar.x, bar.y - 6);
+      });
+    });
+    ctx.restore();
+  }
+};
+
 // ─────────────── TAB SWITCHING ───────────────
 function switchTab(name) {
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
@@ -430,20 +473,22 @@ function buildFrontierChart() {
       scales:{
         x:{
           type:'logarithmic',
-          title:{display:true,text:'Active Parameters per Token (B)',color:'#8b949e'},
+          title:{display:true,text:'Active Parameters per Token (B)',color:'#8b949e',font:AXIS_TITLE},
           grid:{color:'#21262d'},
-          ticks:{color:'#8b949e'},
-          min:1, max:500
+          ticks:{color:'#8b949e',font:AXIS_TICK},
+          // Smallest plotted model is 8B active, so starting at 1 wasted a third
+          // of the log width. Tightened to spread the low-active-param cluster.
+          min:5, max:500
         },
         y:{
-          title:{display:true,text:'MMLU Score (%)',color:'#8b949e'},
+          title:{display:true,text:'MMLU Score (%)',color:'#8b949e',font:AXIS_TITLE},
           grid:{color:'#21262d'},
-          ticks:{color:'#8b949e'},
+          ticks:{color:'#8b949e',font:AXIS_TICK},
           min:60, max:95
         }
       },
       plugins:{
-        legend:{labels:{color:'#c9d1d9',boxWidth:12,font:{size:12}}},
+        legend:{labels:LEGEND_LABELS},
         tooltip:{
           callbacks:{
             title: items => items[0].raw.label,
@@ -500,10 +545,10 @@ function buildMoEChart() {
       responsive:true,maintainAspectRatio:false,
       animation:{duration:200},
       scales:{
-        x:{type:'logarithmic',title:{display:true,text:'Arithmetic Intensity (FLOPs/Byte)',color:'#8b949e'},grid:{color:'#21262d'},ticks:{color:'#8b949e'},min:0.1,max:1000},
-        y:{type:'logarithmic',title:{display:true,text:'Performance (TFLOPS/s)',color:'#8b949e'},grid:{color:'#21262d'},ticks:{color:'#8b949e'}}
+        x:{type:'logarithmic',title:{display:true,text:'Arithmetic Intensity (FLOPs/Byte)',color:'#8b949e',font:AXIS_TITLE},grid:{color:'#21262d'},ticks:{color:'#8b949e',font:AXIS_TICK},min:0.1,max:1000},
+        y:{type:'logarithmic',title:{display:true,text:'Performance (TFLOPS/s)',color:'#8b949e',font:AXIS_TITLE},grid:{color:'#21262d'},ticks:{color:'#8b949e',font:AXIS_TICK}}
       },
-      plugins:{legend:{labels:{color:'#c9d1d9',boxWidth:12,font:{size:11}}},
+      plugins:{legend:{labels:LEGEND_LABELS},
         tooltip:{callbacks:{label:ctx=>`${ctx.dataset.label}: ${typeof ctx.parsed.y==='number'?ctx.parsed.y.toFixed(1)+' TFLOPS/s':''}`}}}
     }
   });
@@ -578,12 +623,18 @@ function updateMoE() {
       ridge.toFixed(1) + '. The memory pipe is saturated and the MXU is running near peak.';
   }
 
+  const idealPerf = attainable(chip.tflops, chip.bw, idealAI);
+
   moeChart.data.datasets = [
-    { label: 'Roofline (' + chip.name + ')', data: rooflineCurve(chip.tflops, chip.bw), borderColor: '#58a6ff', backgroundColor: 'transparent', borderWidth: 2.5, pointRadius: 0, tension: 0 },
-    { label: 'Ideal (no expert overhead)', data: [{ x: idealAI, y: attainable(chip.tflops, chip.bw, idealAI) }], borderColor: '#8957e5', backgroundColor: '#8957e5', pointRadius: 7, pointHoverRadius: 9, showLine: false },
-    { label: 'Actual (' + overhead.toFixed(1) + '× overhead)', data: [{ x: ai, y: perf }], borderColor: isMemoryBound ? '#f85149' : '#3fb950', backgroundColor: isMemoryBound ? '#f85149' : '#3fb950', pointRadius: 9, pointHoverRadius: 11, showLine: false }
+    { label: 'Roofline (' + chip.name + ')', data: rooflineCurve(chip.tflops, chip.bw), borderColor: '#58a6ff', backgroundColor: 'transparent', borderWidth: 3, pointRadius: 0, tension: 0 },
+    { label: 'Ideal (no expert overhead)', data: [{ x: idealAI, y: idealPerf }], borderColor: '#ffffff', backgroundColor: '#8957e5', borderWidth: 2, pointRadius: 11, pointHoverRadius: 14, showLine: false },
+    { label: 'Actual (' + overhead.toFixed(1) + '× overhead)', data: [{ x: ai, y: perf }], borderColor: '#ffffff', backgroundColor: isMemoryBound ? '#f85149' : '#3fb950', borderWidth: 2, pointRadius: 12, pointHoverRadius: 15, showLine: false }
   ];
-  moeChart.options.scales.y.min = Math.max(0.1, chip.bw * 0.05);
+  // Frame the y-axis around the plotted points. The previous version derived this
+  // floor from bandwidth (a GB/s value) and applied it to a TFLOPS axis, which put
+  // the floor at ~168 TFLOPS on an H100 and clipped both operating points off the
+  // bottom of the chart along with most of the memory-bound diagonal.
+  moeChart.options.scales.y.min = Math.max(0.05, Math.min(perf, idealPerf) / 5);
   moeChart.options.scales.y.max = chip.tflops * 2;
   moeChart.update();
 }
@@ -598,11 +649,11 @@ function buildDisaggChart() {
       responsive: true, maintainAspectRatio: false,
       animation: { duration: 200 },
       scales: {
-        x: { type: 'logarithmic', title: { display: true, text: 'Arithmetic Intensity (FLOPs/Byte)', color: '#8b949e' }, grid: { color: '#21262d' }, ticks: { color: '#8b949e' }, min: 0.1, max: 10000 },
-        y: { type: 'logarithmic', title: { display: true, text: 'Performance (TFLOPS/s)', color: '#8b949e' }, grid: { color: '#21262d' }, ticks: { color: '#8b949e' } }
+        x: { type: 'logarithmic', title: { display: true, text: 'Arithmetic Intensity (FLOPs/Byte)', color: '#8b949e', font: AXIS_TITLE }, grid: { color: '#21262d' }, ticks: { color: '#8b949e', font: AXIS_TICK }, min: 0.1, max: 10000 },
+        y: { type: 'logarithmic', title: { display: true, text: 'Performance (TFLOPS/s)', color: '#8b949e', font: AXIS_TITLE }, grid: { color: '#21262d' }, ticks: { color: '#8b949e', font: AXIS_TICK } }
       },
       plugins: {
-        legend: { labels: { color: '#c9d1d9', boxWidth: 12, font: { size: 11 } } },
+        legend: { labels: LEGEND_LABELS },
         tooltip: { callbacks: { label: ctx => ctx.dataset.label + ': ' + (typeof ctx.parsed.y === 'number' ? ctx.parsed.y.toFixed(1) + ' TFLOPS/s' : '') } }
       }
     }
@@ -642,11 +693,13 @@ function updateDisagg() {
     'sizing it for decode strands compute. This is the structural argument for serving the two phases on different silicon.';
 
   disaggChart.data.datasets = [
-    { label: 'Roofline (' + chip.name + ')', data: rooflineCurve(chip.tflops, chip.bw), borderColor: '#58a6ff', backgroundColor: 'transparent', borderWidth: 2.5, pointRadius: 0, tension: 0 },
-    { label: 'Decode (batch ' + batch + ')', data: [{ x: decodeAI, y: decodePerf }], borderColor: '#f85149', backgroundColor: '#f85149', pointRadius: 9, pointHoverRadius: 11, showLine: false },
-    { label: 'Prefill (seq ' + seq + ')', data: [{ x: prefillAI, y: prefillPerf }], borderColor: '#3fb950', backgroundColor: '#3fb950', pointRadius: 9, pointHoverRadius: 11, showLine: false }
+    { label: 'Roofline (' + chip.name + ')', data: rooflineCurve(chip.tflops, chip.bw), borderColor: '#58a6ff', backgroundColor: 'transparent', borderWidth: 3, pointRadius: 0, tension: 0 },
+    { label: 'Decode (batch ' + batch + ')', data: [{ x: decodeAI, y: decodePerf }], borderColor: '#ffffff', backgroundColor: '#f85149', borderWidth: 2, pointRadius: 12, pointHoverRadius: 15, showLine: false },
+    { label: 'Prefill (seq ' + seq + ')', data: [{ x: prefillAI, y: prefillPerf }], borderColor: '#ffffff', backgroundColor: '#3fb950', borderWidth: 2, pointRadius: 12, pointHoverRadius: 15, showLine: false }
   ];
-  disaggChart.options.scales.y.min = Math.max(0.1, chip.bw * 0.05);
+  // Same units fix as the MoE tab. The old bandwidth-derived floor put the decode
+  // point (~1.7 TFLOPS on an H100) below the bottom of the chart entirely.
+  disaggChart.options.scales.y.min = Math.max(0.05, Math.min(decodePerf, prefillPerf) / 5);
   disaggChart.options.scales.y.max = chip.tflops * 2;
   disaggChart.update();
 }
@@ -716,10 +769,12 @@ function buildCostPerfChart() {
     .sort((a,b)=>b.val-a.val);
   new Chart(document.getElementById('costperf-chart').getContext('2d'), {
     type:'bar',
+    plugins:[barValueLabels],
     data:{labels:priced.map(d=>d.id), datasets:[{label:'TFLOP/s per $1,000', data:priced.map(d=>d.val), backgroundColor:'#1f6feb', borderRadius:4}]},
     options:{responsive:true, maintainAspectRatio:false,
-      scales:{x:{ticks:{color:'#8b949e', maxRotation:45, minRotation:30}, grid:{display:false}},
-              y:{ticks:{color:'#8b949e'}, grid:{color:'#21262d'}, title:{display:true, text:'TFLOP/s per $1,000', color:'#8b949e'}}},
+      layout:{padding:{top:18}},
+      scales:{x:{ticks:{color:'#8b949e', font:AXIS_TICK, maxRotation:45, minRotation:30}, grid:{display:false}},
+              y:{ticks:{color:'#8b949e', font:AXIS_TICK}, grid:{color:'#21262d'}, grace:'10%', title:{display:true, text:'TFLOP/s per $1,000', color:'#8b949e', font:AXIS_TITLE}}},
       plugins:{legend:{display:false}}}
   });
 }
@@ -768,10 +823,12 @@ function updateCalculator() {
   if (calcChart) calcChart.destroy();
   calcChart = new Chart(document.getElementById('calc-chart').getContext('2d'), {
     type:'bar',
+    plugins:[barValueLabels],
     data:{labels:rows.map(r=>r.id), datasets:[{label:'$ per 1M tokens', data:rows.map(r=>Number(r.cost.toFixed(2))), backgroundColor:'#3fb950', borderRadius:4}]},
     options:{responsive:true, maintainAspectRatio:false,
-      scales:{x:{ticks:{color:'#8b949e', maxRotation:45, minRotation:30}, grid:{display:false}},
-              y:{ticks:{color:'#8b949e'}, grid:{color:'#21262d'}, title:{display:true, text:'$ per 1M tokens', color:'#8b949e'}}},
+      layout:{padding:{top:18}},
+      scales:{x:{ticks:{color:'#8b949e', font:AXIS_TICK, maxRotation:45, minRotation:30}, grid:{display:false}},
+              y:{ticks:{color:'#8b949e', font:AXIS_TICK}, grid:{color:'#21262d'}, grace:'10%', title:{display:true, text:'$ per 1M tokens', color:'#8b949e', font:AXIS_TITLE}}},
       plugins:{legend:{display:false}}}
   });
 }
